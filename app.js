@@ -2723,4 +2723,31 @@
   let toured = false;
   try { toured = !!localStorage.getItem('eur-tour-done'); } catch (e) { toured = true; }
   if (!toured) setTimeout(startTour, 700);
+
+  // ---------- Visit counter (footer) ----------
+  // Counts kept by Abacus (a free, open-source counter API; no cookies). Visits go up on every
+  // page load; visitors only the first time a browser opens the site (remembered in
+  // localStorage). Local copies only read the numbers, so testing doesn't inflate them.
+  (function () {
+    const out = $('#siteCount');
+    if (!out || !window.fetch) return;
+    const API = 'https://abacus.jasoncameron.dev/';
+    const NS = 'bgracia-cmu-eur-lab';
+    const local = /^(localhost|127\.0\.0\.1|\[::1\]|)$/.test(location.hostname) || location.protocol === 'file:';
+    let seen = true;
+    try { seen = !!localStorage.getItem('eur-visited'); } catch (e) { /* storage off: don't count as new */ }
+    const count = function (key, hit) {
+      return fetch(API + (hit && !local ? 'hit/' : 'get/') + NS + '/' + key, { referrerPolicy: 'no-referrer', credentials: 'omit' })
+        .then(function (r) { return r.ok ? r.json() : { value: 0 }; })
+        .then(function (d) { return Number(d.value) || 0; })
+        .catch(function () { return null; });
+    };
+    Promise.all([count('visits', true), count('visitors', !seen)]).then(function (v) {
+      if (v[0] === null || v[1] === null) return;   // service unreachable: leave the footer as it is
+      if (!seen && !local) { try { localStorage.setItem('eur-visited', '1'); } catch (e) { /* ignore */ } }
+      const fmt = function (n) { return n.toLocaleString(); };
+      out.textContent = fmt(v[0]) + ' visits · ' + fmt(v[1]) + ' visitors';
+      out.hidden = false;
+    });
+  })();
 })();

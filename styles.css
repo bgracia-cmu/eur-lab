@@ -346,3 +346,4 @@ line.cond-path { stroke-linecap: round; }
 .site-foot { margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; color: var(--muted); font-size: .88rem; }
 .site-foot a { color: var(--accent); font-weight: 600; text-decoration: none; }
 .site-foot a:hover, .site-foot a:focus-visible { text-decoration: underline; }
+.site-count { font-family: var(--font-mono); font-size: .82rem; }

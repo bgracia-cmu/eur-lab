@@ -54,6 +54,8 @@ notation library (VexFlow, from jsDelivr) and the web fonts.
   melodies, count-in with an on-screen countdown.
 - Light and dark mode, phone layout, a first-visit walkthrough.
 - Settings and the Build composition are saved in the browser (localStorage).
+- A visit counter in the footer, kept by [Abacus](https://jasoncameron.dev/abacus/)
+  (total page loads and first-time visitors; no cookies).
 
 ## Code layout
 
