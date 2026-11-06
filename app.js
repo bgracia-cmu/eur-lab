@@ -1471,6 +1471,20 @@
     if (actx.state === 'suspended') actx.resume();
     return actx;
   }
+  // After the page has been in the background (another app, another tab, a locked phone),
+  // browsers can leave the audio context suspended or "interrupted" for good, so resume()
+  // never brings the sound back. Each Play (or sound preview) then starts a fresh context:
+  // it is always inside a tap or key press, where a new context is allowed to start.
+  // play() also marks the context stale if its clock never starts, so the next Play recovers.
+  let audioStale = false;
+  function freshAudio() {
+    if (actx && (audioStale || actx.state === 'interrupted' || actx.state === 'closed')) {
+      try { actx.close(); } catch (e) { /* already closed */ }
+      actx = null;
+    }
+    audioStale = false;
+    return ac();
+  }
   // Slider 0-100 -> gain, with a curve so the low end of the slider is usable
   function volToGain(v) { return Math.pow(v / 100, 2) * 1.6; }
   function applyMix() {
@@ -1712,12 +1726,15 @@
   function play(opts) {
     stopAll();
     if (!opts.trusted && performance.now() - lastGesture > 1500) { return false; }
-    const ctx = ac();
+    // a fresh audio context if the old one went stale in the background; chained exam plays
+    // run without a tap, so they keep the running one
+    const ctx = opts.trusted ? ac() : freshAudio();
     const token = P.token;
     P.onStop = opts.onStop || null;
     const spb = 60 / S.bpm;
     let start = ctx.currentTime + 0.12;
     const countStart = start;
+    const startedAt = performance.now();
     for (let k = 0; k < opts.countIn; k++) click(start + k * spb, k === 0, true);
     start += opts.countIn * spb;
     const playStart = start;
@@ -1747,6 +1764,8 @@
     function tick() {
       if (token !== P.token) return;
       const now = ctx.currentTime;
+      // the sound clock should be running within a moment; if not, the context is stuck
+      if (ctx.state !== 'running' && performance.now() - startedAt > 800) audioStale = true;
       if (opts.loop && !queued && now > passEnd - 0.3) {
         items = items.concat(schedulePass(passEnd));
         queued = true;
@@ -1959,14 +1978,14 @@
       S.inst = $('#inst').value;
       save();
       if (practicePlaying) { startPractice(); return; }
-      const ctx = ac();
+      const ctx = freshAudio();
       tone(ctx.currentTime + 0.03, 0.45);   // preview the new sound
     });
     $('#metroSound').addEventListener('change', function () {
       S.metroSound = $('#metroSound').value;
       save();
       if (practicePlaying) { startPractice(); return; }
-      const ctx = ac();
+      const ctx = freshAudio();
       click(ctx.currentTime + 0.03, true, false, false);
     });
     ['volRhythm', 'volMetro'].forEach(function (k) {
@@ -2542,7 +2561,9 @@
 
   // Playback only ever starts from a real click or key press; stop it when the page is hidden or unloaded
   window.addEventListener('pagehide', function () { window.__eurStop(); });
-  document.addEventListener('visibilitychange', function () { if (document.hidden) stopAll(); });
+  document.addEventListener('visibilitychange', function () { if (document.hidden) { stopAll(); audioStale = true; } });
+  window.addEventListener('pagehide', function () { audioStale = true; });
+  window.addEventListener('pageshow', function (e) { if (e.persisted) audioStale = true; });   // restored from the back/forward cache
 
   // ---------- Walkthrough (first visit, or the Tour button) ----------
   // A spotlight over one part of the page with a tooltip; Back / Next / Skip, arrow keys and Esc.
