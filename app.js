@@ -901,15 +901,19 @@
     const here = xAtIn(geo[b].anchors, pib);
     const margin = 24;   // ball halo
     let other = null;
-    if (b + 1 < geo.length && geo[b + 1].row !== geo[b].row) {
-      // leaving a line: the copy comes in from the left of the next line
-      const x = xAtIn(geo[b + 1].anchors, pib - bpb);
-      if (x > -margin) other = { x: x, g: geo[b + 1] };
+    // the bar that follows / precedes this one; with Loop on, the last bar leads back to the first
+    const looping = P.loop && geo.length > 0;
+    const next = b + 1 < geo.length ? b + 1 : (looping ? 0 : -1);
+    const prev = b > 0 ? b - 1 : (looping && P.looped ? geo.length - 1 : -1);
+    if (next >= 0 && (geo[next].row !== geo[b].row || next === 0)) {
+      // leaving a line: the copy comes in from the left of the next line (or the first, when looping)
+      const x = xAtIn(geo[next].anchors, pib - bpb);
+      if (x > -margin) other = { x: x, g: geo[next] };
     }
-    if (!other && b > 0 && geo[b - 1].row !== geo[b].row) {
-      // just entered a line: the copy finishes going off the right of the line above
-      const x = xAtIn(geo[b - 1].anchors, pib + bpb);
-      if (x < view.W + margin) other = { x: x, g: geo[b - 1] };
+    if (!other && prev >= 0 && (geo[prev].row !== geo[b].row || b === 0)) {
+      // just entered a line: the copy finishes going off the right of the line before
+      const x = xAtIn(geo[prev].anchors, pib + bpb);
+      if (x < view.W + margin) other = { x: x, g: geo[prev] };
     }
     if (!other) return null;
     return { dx: other.x - here, dy: other.g.landY - geo[b].landY };
@@ -1494,7 +1498,8 @@
     actx.metroBus.gain.setTargetAtTime(volToGain(S.volMetro), now, 0.02);
   }
 
-  const P = { token: 0, nodes: [], raf: 0, onStop: null };
+  // loop / looped: whether this playback loops, and whether it has already gone round once
+  const P = { token: 0, nodes: [], raf: 0, onStop: null, loop: false, looped: false };
   function track(node) {
     P.nodes.push(node);
     node.onended = function () { const i = P.nodes.indexOf(node); if (i >= 0) P.nodes.splice(i, 1); };
@@ -1731,6 +1736,8 @@
     const ctx = opts.trusted ? ac() : freshAudio();
     const token = P.token;
     P.onStop = opts.onStop || null;
+    P.loop = !!opts.loop;
+    P.looped = false;
     const spb = 60 / S.bpm;
     let start = ctx.currentTime + 0.12;
     const countStart = start;
@@ -1775,6 +1782,7 @@
           const old = passEnd;
           items = items.filter(function (it) { return it.t >= old - 1e-6; });
           passStart = old;
+          P.looped = true;
           passEnd += passLen;
           queued = false;
         } else {
