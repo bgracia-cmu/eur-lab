@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Eurhythmics Lab">
+  <!-- blue tile (metronome colour) with two beamed eighth notes and a gold pulse dot (notes colour) -->
+  <rect width="64" height="64" rx="14" fill="#2c41a8"/>
+  <g fill="#ffffff">
+    <ellipse cx="20" cy="45" rx="7" ry="5" transform="rotate(-20 20 45)"/>
+    <ellipse cx="41" cy="41" rx="7" ry="5" transform="rotate(-20 41 41)"/>
+    <rect x="25" y="16" width="3.2" height="29" rx="1"/>
+    <rect x="46" y="12" width="3.2" height="29" rx="1"/>
+    <path d="M25 16 L49.2 12 L49.2 18.5 L25 22.5 Z"/>
+  </g>
+  <circle cx="13" cy="15" r="5" fill="#f2c14e"/>
+</svg>
