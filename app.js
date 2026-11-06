@@ -2571,6 +2571,34 @@
     }, 150);
   });
 
+  // ---------- Collapsible rhythm settings ----------
+  // Folds the lists / meter / bars panel down to one line (handy on a phone in landscape).
+  // The choice is remembered; the score re-renders to use the freed width.
+  function panelSummary() {
+    $('#panelSum').textContent = S.bars + (S.bars === 1 ? ' bar' : ' bars') + ' · ' + S.meter + '/4' + (S.melody ? ' · melody' : '');
+  }
+  function setPanelCollapsed(c, keep) {
+    const panel = document.querySelector('aside.panel');
+    if (!panel) return;
+    const was = panel.classList.contains('collapsed');
+    panel.classList.toggle('collapsed', c);
+    document.body.classList.toggle('panel-collapsed', c);
+    $('#panelToggle').setAttribute('aria-expanded', String(!c));
+    panelSummary();
+    if (!keep) { try { localStorage.setItem('eur-panel-collapsed', c ? '1' : ''); } catch (e) { /* ignore */ } }
+    if (was !== c) window.dispatchEvent(new Event('resize'));   // redraw the score at its new width
+  }
+  $('#panelToggle').addEventListener('click', function () {
+    setPanelCollapsed(!document.querySelector('aside.panel').classList.contains('collapsed'));
+  });
+  document.querySelector('aside.panel').addEventListener('change', panelSummary);
+  document.querySelector('aside.panel').addEventListener('input', panelSummary);
+  (function () {
+    let c = false;
+    try { c = !!localStorage.getItem('eur-panel-collapsed'); } catch (e) { /* ignore */ }
+    setPanelCollapsed(c, true);
+  })();
+
   // Playback only ever starts from a real click or key press; stop it when the page is hidden or unloaded
   window.addEventListener('pagehide', function () { window.__eurStop(); });
   document.addEventListener('visibilitychange', function () { if (document.hidden) { stopAll(); audioStale = true; } });
@@ -2686,6 +2714,7 @@
     window.scrollTo({ top: 0 });
   }
   function startTour() {
+    setPanelCollapsed(false, true);   // the tour points at the rhythm settings
     if (tourEls) return;
     stopAll();
     tourSaved = { melody: S.melody };

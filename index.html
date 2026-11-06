@@ -110,6 +110,12 @@
   <section id="view-practice" role="tabpanel" aria-labelledby="tab-practice">
     <div class="practice" id="pLayout">
       <aside class="panel" aria-label="Rhythm settings">
+        <button type="button" class="panel-toggle" id="panelToggle" aria-expanded="true" aria-controls="panelBody">
+          <span class="panel-title">Rhythm settings</span>
+          <span class="panel-sum" id="panelSum"></span>
+          <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+        </button>
+        <div class="panel-body" id="panelBody">
         <fieldset>
           <legend>Lists</legend>
           <div id="listChips" class="list-chips"></div>
@@ -140,6 +146,7 @@
           <legend>Rhythm options</legend>
           <label class="switch">Ties between cells <input type="checkbox" id="opt-ties"></label>
         </fieldset>
+        </div>
       </aside>
 
       <div class="stage">
