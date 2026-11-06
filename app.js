@@ -868,7 +868,58 @@
     ph.style.display = 'none';
     svg.appendChild(ph);
     view.playhead = ph;
+
+    // Wrap-around copy: while the playhead and balls cross from one line to the next, a copy
+    // carries on past the end of the line they leave (or slides in at the start of the line
+    // they enter), so they glide off one edge and in at the other instead of jumping.
+    const SVGNS = 'http://www.w3.org/2000/svg';
+    const wrap = document.createElementNS(SVGNS, 'g');
+    wrap.setAttribute('class', 'wrap-ghost');
+    wrap.style.display = 'none';
+    view.balls.map(function (B) { return B.g; }).concat([phEdge, ph]).forEach(function (el) {
+      if (!el.id) el.id = 'wrapsrc-' + (++wrapSeq);
+      const u = document.createElementNS(SVGNS, 'use');
+      u.setAttribute('href', '#' + el.id);
+      wrap.appendChild(u);
+    });
+    svg.appendChild(wrap);
+    view.wrap = wrap;
+    view.W = W;
     return view;
+  }
+  let wrapSeq = 0;
+
+  // Offset from where the playhead is drawn to where its wrap-around copy belongs, or null
+  // when it is not near a line break.
+  function wrapOffset(view, pos) {
+    if (pos === null) return null;
+    const bpb = view.model.bpb;
+    const geo = view.barGeo;
+    const b = Math.min(geo.length - 1, Math.floor(pos / bpb + 1e-9));
+    if (b < 0) return null;
+    const pib = pos - b * bpb;
+    const here = xAtIn(geo[b].anchors, pib);
+    const margin = 24;   // ball halo
+    let other = null;
+    if (b + 1 < geo.length && geo[b + 1].row !== geo[b].row) {
+      // leaving a line: the copy comes in from the left of the next line
+      const x = xAtIn(geo[b + 1].anchors, pib - bpb);
+      if (x > -margin) other = { x: x, g: geo[b + 1] };
+    }
+    if (!other && b > 0 && geo[b - 1].row !== geo[b].row) {
+      // just entered a line: the copy finishes going off the right of the line above
+      const x = xAtIn(geo[b - 1].anchors, pib + bpb);
+      if (x < view.W + margin) other = { x: x, g: geo[b - 1] };
+    }
+    if (!other) return null;
+    return { dx: other.x - here, dy: other.g.landY - geo[b].landY };
+  }
+  function updateWrap(view, pos, hidePh) {
+    if (!view || !view.wrap) return;
+    const off = hidePh && !(view.balls && view.balls.length) ? null : wrapOffset(view, pos);
+    if (!off) { view.wrap.style.display = 'none'; return; }
+    view.wrap.setAttribute('transform', 'translate(' + off.dx.toFixed(1) + ' ' + off.dy.toFixed(1) + ')');
+    view.wrap.style.display = '';
   }
 
   // ---------- Bouncing ball (karaoke style) ----------
@@ -1159,6 +1210,7 @@
     updateBalls(view, pos);
     const ph = view.playhead;
     if (!ph || !ph.isConnected) return;
+    updateWrap(view, pos, hidePh);
     const bpb = view.model.bpb;
     const barGeo = view.barGeo;
     const b = pos === null ? -1 : Math.floor(pos / bpb + 1e-9);
@@ -1631,7 +1683,7 @@
     [scoreView, typeof dview !== 'undefined' ? dview : null, typeof bview !== 'undefined' ? bview : null].forEach(function (v) { if (v) v.glowK = []; });
     // stopped: put the bouncing balls away (and drop their trails) so none stays frozen
     [scoreView, typeof dview !== 'undefined' ? dview : null, typeof bview !== 'undefined' ? bview : null].forEach(function (v) { updateBalls(v, null); });
-    document.querySelectorAll('g.ball').forEach(function (e) { e.style.display = 'none'; });
+    document.querySelectorAll('g.ball, g.wrap-ghost').forEach(function (e) { e.style.display = 'none'; });
     document.querySelectorAll('.reveal-cover').forEach(function (e) { e.setAttribute('width', 0); });   // stopped: show it all to check
     if (typeof updateConductor === 'function') updateConductor(null);
     document.querySelectorAll('.grid-now').forEach(function (e) {
