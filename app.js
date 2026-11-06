@@ -1796,6 +1796,10 @@
       const outDelay = Math.min(0.5, Math.max(0, (ctx.outputLatency || 0) + (ctx.baseLatency || 0)));
       const vnow = now - outDelay + 1 / 60;
       let vpos = vnow >= passStart ? (vnow - passStart) / spb : null;
+      // Looping: the sound starts the next pass a moment before the (delayed) visuals reach it.
+      // Until they do, keep them on the end of the previous pass, so the playhead and balls
+      // glide round to the start instead of blinking out and snapping back in.
+      if (vpos === null && opts.loop && passStart > playStart + 1e-6) vpos = (vnow - passStart) / spb + opts.totalBeats;
       if (vpos !== null && opts.loop && vpos >= opts.totalBeats) vpos -= opts.totalBeats;
       if (opts.onPos) opts.onPos(vpos);
       // Beat position including the count-in (negative), for the conductor
