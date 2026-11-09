@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://abacus.jasoncameron.dev; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="description" content="Practice, dictation and rhythm-composing tool for Eurhythmics I rhythm lists.">
+<title>Eurhythmics Lab</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=DM+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="currentColor"><ellipse cx="11" cy="52" rx="8.5" ry="6" transform="rotate(-25 11 52)"/><ellipse cx="31" cy="52" rx="8.5" ry="6" transform="rotate(-25 31 52)"/><ellipse cx="51" cy="52" rx="8.5" ry="6" transform="rotate(-25 51 52)"/><rect x="15.8" y="17" width="43.4" height="6.4" rx="1"/></g><g fill="none" stroke="currentColor" stroke-width="3.4"><path d="M17.5 50 V20 M37.5 50 V20 M57.5 50 V20"/></g><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M33 2.5 H41.5 L37.2 7 C40 7 42 8.6 42 10.6 C42 12.6 40.1 14 37.6 14 C35.9 14 34.4 13.4 33.4 12.4"/></svg>Eurhythmics Lab</h1>
+    </div>
+    <div class="head-right">
+    <button class="pill-btn" id="tourBtn" type="button" title="Show the walkthrough">Tour</button>
+    <button class="pill-btn theme-btn" id="themeBtn" type="button" aria-label="Switch to dark mode" title="Dark mode"></button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <a href="#practice" id="tab-practice" role="tab" aria-selected="true">Practice</a>
+    <a href="#dictation" id="tab-dictation" role="tab" aria-selected="false">Dictation</a>
+    <a href="#compose" id="tab-build" role="tab" aria-selected="false">Compose</a>
+    <a href="#glossary" id="tab-glossary" role="tab" aria-selected="false">Glossary</a>
+    <a href="#settings" id="tab-options" role="tab" aria-selected="false">Settings</a>
+  </nav>
+
+  <div class="general" role="group" aria-label="Playback controls">
+    <div class="stage-bar" data-page="practice">
+      <button class="btn primary" id="playBtn" type="button"></button>
+      <button class="btn" id="newBtn" type="button">New rhythm</button>
+      <div id="conductor" class="conductor-card" hidden></div>
+    </div>
+    <div class="stage-bar" data-page="dictation" hidden>
+      <button class="btn primary" id="dPlayBtn" type="button"></button>
+      <button class="btn" id="dNewBtn" type="button">New dictation</button>
+      <button class="btn" id="dRevealAll" type="button">Reveal all</button>
+      <button class="btn" id="dHideAll" type="button">Hide all</button>
+    </div>
+    <div class="stage-bar" data-page="build" hidden>
+      <button class="btn primary" id="bPlayBtn" type="button"></button>
+      <button class="btn" id="bUndo" type="button">Undo</button>
+      <button class="btn" id="bClear" type="button">Clear</button>
+    </div>
+    <div class="tempo">
+      <label for="bpm">Tempo</label>
+      <input type="range" id="bpm" min="40" max="160" step="2" value="64">
+      <output id="bpmOut" for="bpm">♩=64</output>
+    </div>
+    <div class="optrow metro-bar" role="group" aria-label="Metronome">
+      <label class="pill"><input type="checkbox" id="opt-metro"><span>Metronome</span></label>
+      <div class="subseg" role="radiogroup" aria-label="Metronome clicks per beat" title="Metronome clicks per beat">
+        <span class="subcap" aria-hidden="true">÷</span>
+        <label><input type="radio" name="sub" id="sub-1" value="1"><span>1</span></label>
+        <label><input type="radio" name="sub" id="sub-2" value="2"><span>2</span></label>
+        <label><input type="radio" name="sub" id="sub-4" value="4"><span>4</span></label>
+      </div>
+      <label class="pill"><input type="checkbox" id="opt-countIn"><span>Count-in</span></label>
+      <label class="pill" title="Repeat until you press Stop (L)"><input type="checkbox" id="opt-loop"><span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 5h7.2L9.6 3.4l1-1L14 5.8l-3.4 3.4-1-1L11.2 6.6H4a1.4 1.4 0 0 0-1.4 1.4v1H1.2V8A2.8 2.8 0 0 1 4 5zm8 6H4.8l1.6 1.6-1 1L2 10.2l3.4-3.4 1 1-1.6 1.6H12a1.4 1.4 0 0 0 1.4-1.4V7h1.4v1A2.8 2.8 0 0 1 12 11z"/></svg>Loop</span></label>
+    </div>
+  </div>
+
+  <section id="view-practice" role="tabpanel" aria-labelledby="tab-practice">
+    <div class="practice" id="pLayout">
+      <aside class="panel" aria-label="Rhythm settings">
+        <button type="button" class="panel-toggle" id="panelToggle" aria-expanded="true" aria-controls="panelBody">
+          <span class="panel-title">Rhythm settings</span>
+          <span class="panel-sum" id="panelSum"></span>
+          <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+        </button>
+        <label class="pill aids-pill" title="Syllables, pulse circles, underlines and the other study marks under the staff (choose which in Settings)"><input type="checkbox" id="opt-aids"><span>Notation aids</span></label>
+        <div class="panel-body" id="panelBody">
+        <fieldset>
+          <legend>Lists</legend>
+          <div id="listChips" class="list-chips"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Meter</legend>
+          <div class="seg">
+            <label><input type="radio" name="meter" id="meter-2" value="2"><span class="ts"><span>2</span><span>4</span></span></label>
+            <label><input type="radio" name="meter" id="meter-3" value="3"><span class="ts"><span>3</span><span>4</span></span></label>
+            <label><input type="radio" name="meter" id="meter-4" value="4"><span class="ts"><span>4</span><span>4</span></span></label>
+            <label><input type="radio" name="meter" id="meter-5" value="5"><span class="ts"><span>5</span><span>4</span></span></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Bars</legend>
+          <div class="seg seg-bars" role="radiogroup" aria-label="Number of bars">
+            <label><input type="radio" name="bars" id="bars-1" value="1"><span>1</span></label>
+            <label><input type="radio" name="bars" id="bars-2" value="2"><span>2</span></label>
+            <label><input type="radio" name="bars" id="bars-3" value="3"><span>3</span></label>
+            <label><input type="radio" name="bars" id="bars-4" value="4"><span>4</span></label>
+            <label><input type="radio" name="bars" id="bars-5" value="5"><span>5</span></label>
+            <label><input type="radio" name="bars" id="bars-6" value="6"><span>6</span></label>
+            <label><input type="radio" name="bars" id="bars-7" value="7"><span>7</span></label>
+            <label><input type="radio" name="bars" id="bars-8" value="8"><span>8</span></label>
+          </div>
+        </fieldset>
+        <fieldset id="melodySet">
+          <legend>Melody (Practice)</legend>
+          <label class="switch">Pitches on a staff <input type="checkbox" id="opt-melody"></label>
+          <select id="keySel" aria-label="Key">
+            <optgroup label="Major"><option value="C">C major</option><option value="G">G major</option><option value="D">D major</option><option value="F">F major</option><option value="Bb">B♭ major</option></optgroup>
+            <optgroup label="Minor"><option value="Am">A minor</option><option value="Em">E minor</option><option value="Dm">D minor</option><option value="Gm">G minor</option></optgroup>
+          </select>
+          <label class="switch">Legato <input type="checkbox" id="opt-legato"></label>
+        </fieldset>
+        <fieldset>
+          <legend>Rhythm options</legend>
+          <label class="switch">Ties between cells <input type="checkbox" id="opt-ties"></label>
+        </fieldset>
+        </div>
+      </aside>
+
+      <div class="stage">
+        <p class="meta" id="scoreMeta"></p>
+        <div class="score-card">
+          <div id="score" class="score vf" aria-label="Generated rhythm"></div>
+          <div id="hiddenMsg" class="hidden-msg" hidden>
+            <p>Notation is hidden. Press Play, listen, and write the rhythm down. Reveal it when you are ready to check.</p>
+            <button class="btn" id="revealBtn" type="button">Reveal rhythm</button>
+          </div>
+        </div>
+        <p class="note" id="fillNote" hidden></p>
+        <p class="hint"><kbd>Space</kbd> plays or stops · <kbd>N</kbd> makes a new rhythm · <kbd>L</kbd> turns loop on or off</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-dictation" role="tabpanel" aria-labelledby="tab-dictation" hidden>
+    <div class="practice" id="dLayout">
+    <div class="stage">
+      <p class="meta" id="dMeta"></p>
+      <div class="dict-tools">
+        <div class="grp"><span class="optlabel">Play bar</span><span class="grp" id="barBtns"></span></div>
+        <div class="grp">
+          <label class="pill" title="Plays the dictation a set number of times with a gap between, then locks replays"><input type="checkbox" id="opt-exam"><span>Exam mode</span></label>
+          <label class="mini">Plays <select id="examPlays"><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+          <label class="mini">Gap <select id="examGap"><option value="5">5 s</option><option value="10">10 s</option><option value="15">15 s</option><option value="20">20 s</option><option value="30">30 s</option></select></label>
+        </div>
+      </div>
+      <p class="note" id="examNote" hidden></p>
+      <p class="hint">Listen and write the rhythm down. Tap a beat on the staff to check just that beat; tap it again to hide it.</p>
+      <div class="score-card" id="dCard">
+        <div id="dscore" class="score vf" aria-label="Dictation rhythm, hidden"></div>
+      </div>
+    </div>
+    </div>
+  </section>
+
+  <section id="view-build" role="tabpanel" aria-labelledby="tab-build" hidden>
+    <div class="practice" id="bLayout">
+    <div class="stage">
+      <p class="meta" id="bMeta"></p>
+      <p class="hint">Drag a rhythm from the palette onto a bar, or tap it to add it to the next free space. Tap a rhythm on the staff to remove it.</p>
+      <p class="note" id="bNote" hidden></p>
+      <div class="score-card" id="bCard">
+        <div id="bscore" class="score vf" aria-label="Your rhythm"></div>
+      </div>
+      <div class="palette" id="palette" aria-label="Rhythm palette"></div>
+    </div>
+    </div>
+  </section>
+
+  <section id="view-glossary" role="tabpanel" aria-labelledby="tab-glossary" hidden>
+    <p class="gl-intro">Every cell from the four lists. Press play to hear one. The cards use the tempo and the options bar above, the same as Practice.</p>
+    <div id="glossaryLists" class="glossary-lists"></div>
+  </section>
+
+  <section id="view-options" role="tabpanel" aria-labelledby="tab-options" hidden>
+    <div class="optbar" id="optbar" role="region" aria-label="Settings for every page">
+
+      <section class="optsec" id="mixer">
+        <h3>Sound</h3>
+        <div class="mixch">
+          <span class="optlabel">Rhythm</span>
+          <select id="inst" aria-label="Rhythm instrument"></select>
+          <input type="range" id="volRhythm" min="0" max="100" step="1" aria-label="Rhythm volume">
+          <output id="volRhythmOut" for="volRhythm"></output>
+          <label class="pill" title="Plays notes louder on strong beats and softer on weak ones (beat 1 loudest, e / a softest)"><input type="checkbox" id="opt-punch"><span>Velocity by beat</span></label>
+        </div>
+        <div class="mixch">
+          <span class="optlabel">Metronome</span>
+          <select id="metroSound" aria-label="Metronome sound"></select>
+          <input type="range" id="volMetro" min="0" max="100" step="1" aria-label="Metronome volume">
+          <output id="volMetroOut" for="volMetro"></output>
+        </div>
+      </section>
+
+      <section class="optsec" id="notationSec">
+        <h3>Notation</h3>
+        <div class="optrow aids-row">
+          <label class="pill"><input type="checkbox" id="opt-grid"><span>1 e &amp; a</span></label>
+          <label class="pill"><input type="checkbox" id="opt-pulse"><span>Pulse circles</span></label>
+          <label class="pill"><input type="checkbox" id="opt-circles"><span>Circled syllables</span></label>
+          <label class="pill"><input type="checkbox" id="opt-boxes"><span>Underlines</span></label>
+        <label class="pill" title="The underline fills in as the playhead moves along it"><input type="checkbox" id="opt-runFill"><span>Underline fill</span></label>
+          <label class="pill" title="Thin lines between beats under the staff"><input type="checkbox" id="opt-beatLines"><span>Beat lines</span></label>
+          <label class="pill" title="A short line above each beat number"><input type="checkbox" id="opt-beatMarks"><span>Beat marks</span></label>
+          <label class="pill" title="Gives each beat's 1 e &amp; a its own color"><input type="checkbox" id="opt-beatColors"><span>Beat colors</span></label>
+        </div>
+      </section>
+
+      <section class="optsec" id="displaySec">
+        <h3>Display <span class="legend">Practice score</span></h3>
+        <div class="dict" role="radiogroup" aria-label="How the Practice score is shown">
+              <label class="chip"><input type="radio" name="notation" id="nt-show" value="show"><span><b>Show notation</b><small>Everything visible</small></span></label>
+              <label class="chip"><input type="radio" name="notation" id="nt-semi" value="semi"><span><b>Semi-reveal</b><small>Faded; the playhead clears it a beat ahead</small></span></label>
+              <label class="chip"><input type="radio" name="notation" id="nt-hidden" value="hidden"><span><b>Hidden</b><small>Listen and write it down, then reveal</small></span></label>
+              <label class="chip"><input type="radio" name="notation" id="nt-dictate" value="dictate"><span><b>Reveal as played</b><small>Hidden; uncovered only as it plays</small></span></label>
+              <label class="chip"><input type="radio" name="notation" id="nt-window" value="window"><span><b>Window</b><small>Only a beat either side of the playhead is visible</small></span></label>
+            </div>
+      </section>
+
+      <section class="optsec" id="colors">
+        <h3>Playback visuals <span class="legend"><i class="swatch gold"></i> notes · <i class="swatch blue"></i> metronome</span></h3>
+        <div class="optrow">
+          <label class="pill"><input type="checkbox" id="opt-highlight"><span>Highlight notes</span></label>
+        </div>
+        <div class="colorgrid" id="colorGrid"></div>
+      </section>
+
+      <div class="optfoot">
+        <span>Settings are saved in this browser.</span>
+        <button class="btn btn-small" id="resetBtn" type="button">Reset to defaults</button>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-foot">
+    <span>Made by a CMU Music and Technology student</span>
+  </footer>
+</div>
+
+<!-- VexFlow 4.2.2 (MIT), pinned version -->
+<script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"
+  integrity="sha384-NOpv0+9OuhqtqeXLSoULPF4d3UCwlWkmcHkJklpAosC7LpqYvhFCFqqu9QElzbjS"
+  crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="app.js"></script>
+</body>
+</html>

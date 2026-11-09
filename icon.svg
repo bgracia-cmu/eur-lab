@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Eurhythmics Lab">
+  <!-- an eighth-note triplet; black, or white when the browser is in dark mode -->
+  <style>
+    .f { fill: #000; } .s { fill: none; stroke: #000; }
+    @media (prefers-color-scheme: dark) { .f { fill: #fff; } .s { stroke: #fff; } }
+  </style>
+  <g class="f">
+    <ellipse cx="11" cy="52" rx="8.5" ry="6" transform="rotate(-25 11 52)"/>
+    <ellipse cx="31" cy="52" rx="8.5" ry="6" transform="rotate(-25 31 52)"/>
+    <ellipse cx="51" cy="52" rx="8.5" ry="6" transform="rotate(-25 51 52)"/>
+    <rect x="15.8" y="17" width="43.4" height="6.4" rx="1"/>
+  </g>
+  <g class="s" stroke-width="3.4">
+    <path d="M17.5 50 V20 M37.5 50 V20 M57.5 50 V20"/>
+  </g>
+  <path class="s" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M33 2.5 H41.5 L37.2 7 C40 7 42 8.6 42 10.6 C42 12.6 40.1 14 37.6 14 C35.9 14 34.4 13.4 33.4 12.4"/>
+</svg>
