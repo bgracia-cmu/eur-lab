@@ -1820,10 +1820,15 @@
   }
 
   // Metronome click. accent: downbeat. loud: count-in. sub: a subdivision click between beats
+  // Each metronome sound is scaled so a plain beat is about as loud as an instrument note on
+  // a beat (measured: RMS over the loudest 60 ms), so the two volume sliders cover the same range.
+  const METRO_NORM = { click: 5.2, woodblock: 3.85, cowbell: 4.7, hihat: 4.0 };
   function click(t, accent, loud, sub) {
     const ctx = ac();
-    const out = ctx.metroBus;
-    const level = sub ? 0.45 : (loud ? 2.2 : 1) * (accent ? 1 : 0.7);
+    const out = ctx.createGain();
+    out.gain.value = METRO_NORM[S.metroSound] || METRO_NORM.click;
+    out.connect(ctx.metroBus);
+    const level = sub ? 0.45 : (loud ? 1.4 : 1) * (accent ? 1 : 0.7);   // count-in clicks a little louder
     const kind = S.metroSound;
     if (kind === 'woodblock') {
       const f = sub ? 700 : (accent ? 1250 : 950);
@@ -3076,10 +3081,74 @@
     root.querySelector('.sc-ok').focus();
   }
 
-  // first visit: start the walkthrough (after the sound check)
+  // ---------- What's new ----------
+  // One entry per release, newest first. To ship a change: add an entry at the top with the next
+  // version number. A returning visitor sees every entry newer than the last version they saw
+  // (stored in localStorage); a first-time visitor gets the tour instead.
+  const CHANGES = [
+    { v: 4, date: 'November 10, 2026', items: [
+      'The metronome is now as loud as the instrument at the same volume setting (it was much quieter).',
+      'This What’s new card shows what changed since your last visit.'
+    ] },
+    { v: 3, date: 'November 10, 2026', items: [
+      'Ternary List 1, and compound meters 6/8, 9/8, 12/8 and 15/8 (pick them under Meter).',
+      'In compound time the tempo is per dotted quarter, the metronome clicks 1, 3 or 6 times a beat, and the counting reads 1 & a / 1 ta & ta a ta.'
+    ] },
+    { v: 2, date: 'November 9, 2026', items: [
+      'Rhythm settings are a row of buttons above the score; each opens a small menu.',
+      'Notation aids: one switch for a plain score without the counting marks.',
+      'Bars is chosen with 1–8 buttons. Options is now the Settings page.',
+      'Scrolling and settings no longer make the page jump on phones.'
+    ] }
+  ];
+  const VERSION = CHANGES[0].v;
+  function whatsNew(then) {
+    let seen = 0;
+    try { seen = Number(localStorage.getItem('eur-version')) || 0; } catch (e) { seen = VERSION; }
+    const fresh = CHANGES.filter(function (c) { return c.v > seen; });
+    const done = function () { try { localStorage.setItem('eur-version', String(VERSION)); } catch (e) { /* ignore */ } if (then) then(); };
+    if (!fresh.length) { done(); return; }
+    const root = document.createElement('div');
+    root.className = 'tour sound-check whats-new';
+    root.innerHTML = '<div class="tour-block sc-back"></div>' +
+      '<div class="tour-tip sc-tip" role="dialog" aria-modal="true" aria-labelledby="wnTitle">' +
+      '<h4 id="wnTitle">What’s new</h4><div class="wn-list"></div>' +
+      '<div class="tour-btns"><span></span><button type="button" class="btn btn-small primary wn-ok">Got it</button></div></div>';
+    const list = root.querySelector('.wn-list');
+    fresh.forEach(function (c) {
+      const sec = document.createElement('section');
+      const h = document.createElement('p');
+      h.className = 'wn-date';
+      h.textContent = c.date;
+      const ul = document.createElement('ul');
+      c.items.forEach(function (t) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+      sec.appendChild(h);
+      sec.appendChild(ul);
+      list.appendChild(sec);
+    });
+    document.body.appendChild(root);
+    const close = function () {
+      root.remove();
+      document.removeEventListener('keydown', onKey, true);
+      done();
+    };
+    const onKey = function (e) { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    root.querySelector('.wn-ok').addEventListener('click', close);
+    root.querySelector('.wn-ok').focus();
+  }
+
+  // Startup: the sound check, then the tour on a first visit or What's new for a returning one
   let toured = false;
   try { toured = !!localStorage.getItem('eur-tour-done'); } catch (e) { toured = true; }
-  setTimeout(function () { soundCheck(function () { if (!toured) setTimeout(startTour, 200); }); }, 500);
+  setTimeout(function () {
+    soundCheck(function () {
+      if (!toured) {
+        try { localStorage.setItem('eur-version', String(VERSION)); } catch (e) { /* ignore */ }   // the tour covers it all
+        setTimeout(startTour, 200);
+      } else whatsNew();
+    });
+  }, 500);
 
   // ---------- Visit counter (not shown on the page) ----------
   // Counts kept by Abacus (a free, open-source counter API; no cookies): visits go up on every
