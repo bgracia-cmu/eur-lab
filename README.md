@@ -1,7 +1,7 @@
 # <img src="icon.svg" alt="" width="32" height="32"> Eurhythmics Lab
 
 A study tool for CMU Eurhythmics I rhythm lists. It generates, plays and
-visualizes rhythms built from the four binary lists, with tools for practice,
+visualizes rhythms built from the binary and ternary lists, with tools for practice,
 dictation, composing rhythms and simple melodies.
 
 **Author:** Bruno Gracia
@@ -19,7 +19,8 @@ notation library (VexFlow, from jsDelivr) and the web fonts.
 
 ## Pages
 
-- **Practice** — random rhythms from the selected lists, meter (2/4–5/4) and
+- **Practice** — random rhythms from the selected lists, meter (2/4–5/4, or compound
+  6/8–15/8) and
   number of bars. Optional melody mode adds pitches in a major or minor key with
   a harmony plan that cadences on the right bars (half cadence mid-way,
   authentic cadence at the end).
@@ -38,6 +39,12 @@ notation library (VexFlow, from jsDelivr) and the web fonts.
 | Binary List 2 | dotted quarter + eighth, eighth + dotted quarter, eighth–quarter–eighth |
 | Binary List 2 (Alternate) | Binary List 2 with each eighth replaced by two sixteenths |
 | Binary List 3 | eighth + two sixteenths, two sixteenths + eighth, sixteenth–eighth–sixteenth, dotted eighth + sixteenth, sixteenth + dotted eighth |
+| Ternary List 1 | dotted quarter, three eighths, quarter + eighth, eighth + quarter, 16-16-8-8, 8-16-16-8, 8-8-16-16, 16-16-16-16-8, 16-16-8-16-16, 8-16-16-16-16, six sixteenths, dotted half |
+
+Binary lists are used in x/4 meters and ternary lists in compound meters (6/8,
+9/8, 12/8, 15/8), where the beat is a dotted quarter: the tempo is given per
+dotted quarter, the metronome clicks 1, 3 or 6 times per beat, and the counting
+row reads 1 & a on the eighths and 1 ta & ta a ta on the sixteenths.
 
 ## Features
 
@@ -46,7 +53,7 @@ notation library (VexFlow, from jsDelivr) and the web fonts.
   notes, pulse circles and optional beat lines.
 - Playback visuals: playhead, bouncing balls (notes / metronome), note and
   grid highlights that fade with the playhead, a conducting-pattern minimap
-  (left, right or both hands; 2/4–5/4).
+  (left, right or both hands; two to five beats per bar).
 - Display modes for the practice score: show, semi-reveal, hidden,
   reveal as played, window.
 - Sound: Web Audio instruments (piano, marimba, synth, woodblock, snare, clap),

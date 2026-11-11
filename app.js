@@ -8,12 +8,16 @@
     { id: 'L1', name: 'Binary List 1', sub: 'Beat divisions', desc: 'One beat split into 1, 2, 3 or 4 notes, plus the half note.' },
     { id: 'L2', name: 'Binary List 2', sub: 'Two-beat long–short patterns', desc: 'Dotted quarter and eighth combinations, including the syncopated eighth–quarter–eighth.' },
     { id: 'A2', name: 'Binary List 2 (Alternate)', sub: 'Binary List 2 with sixteenths', desc: 'The Binary List 2 patterns with each eighth note replaced by two sixteenths.' },
-    { id: 'L3', name: 'Binary List 3', sub: 'One-beat sixteenth figures', desc: 'Eighth and sixteenth combinations inside one beat, including dotted-eighth rhythms.' }
+    { id: 'L3', name: 'Binary List 3', sub: 'One-beat sixteenth figures', desc: 'Eighth and sixteenth combinations inside one beat, including dotted-eighth rhythms.' },
+    { id: 'T1', name: 'Ternary List 1', sub: 'Compound meters (6/8 to 15/8)', desc: 'One dotted-quarter beat split into eighths and sixteenths, plus the dotted half.', ternary: true }
   ];
+  // Ternary lists are for compound meters (6/8, 9/8, 12/8, 15/8), binary lists for x/4.
+  const isTernary = function (listId) { return LISTS.some(function (L) { return L.id === listId && L.ternary; }); };
   const T3 = 1 / 3;
   const n = (d, vf, dots) => ({ d: d, vf: vf, dots: dots || 0 });
   const Q = () => n(1, 'q'), E = () => n(0.5, '8'), X = () => n(0.25, '16');
   const QD = () => n(1.5, 'q', 1), ED = () => n(0.75, '8', 1);
+  const TE = () => n(1 / 3, '8'), TS = () => n(1 / 6, '16');   // eighth and sixteenth in compound time
 
   const CELLS = [
     { id: 'q', list: 'L1', name: 'Quarter note', notes: [Q()] },
@@ -36,19 +40,43 @@
     { id: 'ss-e', list: 'L3', name: 'Two sixteenths, eighth', notes: [X(), X(), E()], beams: [[0, 1, 2]] },
     { id: 's-e-s', list: 'L3', name: 'Sixteenth, eighth, sixteenth', notes: [X(), E(), X()], beams: [[0, 1, 2]] },
     { id: 'ed-s', list: 'L3', name: 'Dotted eighth, sixteenth', notes: [ED(), X()], beams: [[0, 1]] },
-    { id: 's-ed', list: 'L3', name: 'Sixteenth, dotted eighth', notes: [X(), ED()], beams: [[0, 1]] }
+    { id: 's-ed', list: 'L3', name: 'Sixteenth, dotted eighth', notes: [X(), ED()], beams: [[0, 1]] },
+
+    // Ternary List 1. In compound time the beat is a dotted quarter, so durations are in those
+    // beats: eighth = 1/3, sixteenth = 1/6, quarter = 2/3, dotted half = 2.
+    { id: 't-dq', list: 'T1', name: 'Dotted quarter', notes: [n(1, 'q', 1)] },
+    { id: 't-eee', list: 'T1', name: 'Three eighths', notes: [TE(), TE(), TE()], beams: [[0, 1, 2]] },
+    { id: 't-q-e', list: 'T1', name: 'Quarter, eighth', notes: [n(2 / 3, 'q'), TE()] },
+    { id: 't-e-q', list: 'T1', name: 'Eighth, quarter', notes: [TE(), n(2 / 3, 'q')] },
+    { id: 't-ss-e-e', list: 'T1', name: 'Two sixteenths, two eighths', notes: [TS(), TS(), TE(), TE()], beams: [[0, 1, 2, 3]] },
+    { id: 't-e-ss-e', list: 'T1', name: 'Eighth, two sixteenths, eighth', notes: [TE(), TS(), TS(), TE()], beams: [[0, 1, 2, 3]] },
+    { id: 't-e-e-ss', list: 'T1', name: 'Two eighths, two sixteenths', notes: [TE(), TE(), TS(), TS()], beams: [[0, 1, 2, 3]] },
+    { id: 't-ssss-e', list: 'T1', name: 'Four sixteenths, eighth', notes: [TS(), TS(), TS(), TS(), TE()], beams: [[0, 1, 2, 3, 4]] },
+    { id: 't-ss-e-ss', list: 'T1', name: 'Two sixteenths, eighth, two sixteenths', notes: [TS(), TS(), TE(), TS(), TS()], beams: [[0, 1, 2, 3, 4]] },
+    { id: 't-e-ssss', list: 'T1', name: 'Eighth, four sixteenths', notes: [TE(), TS(), TS(), TS(), TS()], beams: [[0, 1, 2, 3, 4]] },
+    { id: 't-s6', list: 'T1', name: 'Six sixteenths', notes: [TS(), TS(), TS(), TS(), TS(), TS()], beams: [[0, 1, 2, 3, 4, 5]] },
+    { id: 't-hd', list: 'T1', name: 'Dotted half', notes: [n(2, 'h', 1)] }
   ];
   CELLS.forEach(function (c) {
     c.beams = c.beams || [];
     c.beats = Math.round(c.notes.reduce(function (a, x) { return a + x.d; }, 0) * 12) / 12;
+    c.ternary = isTernary(c.list);
   });
   const QUARTER = CELLS[0];
+  const DOTTED_QUARTER = CELLS.filter(function (c) { return c.id === 't-dq'; })[0];
+  // The meter as written: 4 beats is 4/4 in simple time, 12/8 in compound time
+  const meterLabel = function (bpb, ternary) { return ternary ? (bpb * 3) + '/8' : bpb + '/4'; };
 
   // Count syllable for a position measured in beats from the bar (or cell) start
-  function syllable(p) {
+  // Compound time (ternary): 1 & a on the eighths, 1 ta & ta a ta on the sixteenths.
+  function syllable(p, ternary) {
     const b = Math.floor(p + 1e-6);
     const f = p - b;
     const near = function (x) { return Math.abs(f - x) < 1e-3; };
+    if (ternary) {
+      const k = Math.round(f * 6);
+      return [String(b + 1), 'ta', '&', 'ta', 'a', 'ta'][k] || '·';
+    }
     let txt = '·';
     if (near(0)) txt = String(b + 1);
     else if (near(0.25)) txt = 'e';
@@ -59,18 +87,25 @@
     return txt;
   }
   // Metric weight of a position in the bar: downbeat 1, other beats 0.55, & 0.28, e / a / triplet notes 0.15
-  function metricWeight(pib) {
+  function metricWeight(pib, ternary) {
     const b = Math.floor(pib + 1e-6);
     const f = pib - b;
     if (f < 1e-3 && b === 0) return 1;
     if (f < 1e-3) return 0.55;
+    if (ternary) return Math.abs(f * 3 - Math.round(f * 3)) < 1e-3 ? 0.28 : 0.15;   // eighths, then sixteenths
     if (Math.abs(f - 0.5) < 1e-3) return 0.28;
     return 0.15;
+  }
+  // Metronome clicks per beat. The ÷ setting is 1, 2 or 4 (beats, eighths, sixteenths in x/4);
+  // in compound time the same choices click dotted quarters, eighths (3) and sixteenths (6).
+  function clicksPerBeat(ternary) {
+    const sub = S.sub || 1;
+    return ternary ? (sub === 4 ? 6 : (sub === 2 ? 3 : 1)) : sub;
   }
   function cellCounts(cell) {
     let p = 0;
     const parts = [];
-    cell.notes.forEach(function (nt) { parts.push(syllable(p)); p += nt.d; });
+    cell.notes.forEach(function (nt) { parts.push(syllable(p, cell.ternary)); p += nt.d; });
     return parts.join(' ');
   }
 
@@ -111,7 +146,7 @@
 
   // ---------- Settings ----------
   const DEFAULTS = {
-    lists: ['L1', 'L2'], meter: 4, bars: 4, ties: false, hide: false,
+    lists: ['L1', 'L2', 'T1'], meter: 4, ternary: false, bars: 4, ties: false, hide: false,
     bpm: 64, metro: true, sub: 1, countIn: true, loop: false,
     grid: true, pulse: false, circles: true, boxes: true, counts: false, highlight: true,
     staffFollow: 'notes', tracer: true, metroBall: false, playhead: true, playheadFollow: 'metro',
@@ -135,7 +170,12 @@
   const rnd = function (a) { return a[Math.floor(Math.random() * a.length)]; };
 
   // Flatten bars of cells into note events: pos = beats from the start, pib = beats into the bar
-  function buildModel(bars, bpb) {
+  // ternary: compound time (beat = dotted quarter); taken from the cells when not given
+  function buildModel(bars, bpb, ternary) {
+    if (ternary === undefined) {
+      const first = bars.reduce(function (c, b) { return c || b.cells[0]; }, null);
+      ternary = !!(first && first.ternary);
+    }
     const flat = [];
     const cellStarts = [];
     let pos = 0;
@@ -150,7 +190,7 @@
         });
       });
     });
-    return { bpb: bpb, bars: bars, flat: flat, cellStarts: cellStarts, tieAfter: new Set(), total: bars.length * bpb };
+    return { bpb: bpb, ternary: !!ternary, bars: bars, flat: flat, cellStarts: cellStarts, tieAfter: new Set(), total: bars.length * bpb };
   }
 
   function generate() {
@@ -158,8 +198,15 @@
     applyMelody(score);
     revealed = false;
   }
+  // Lists that apply to the current meter: binary lists in x/4, ternary lists in x/8. If none of
+  // the selected lists fit the meter, its first list is used so there is always something to draw.
+  function meterLists() {
+    const use = S.lists.filter(function (l) { return isTernary(l) === !!S.ternary; });
+    return use.length ? use : [S.ternary ? 'T1' : 'L1'];
+  }
   function makeRhythm() {
     const bpb = S.meter;
+    const lists = meterLists();
     const bars = [];
     let filled = false;
     for (let b = 0; b < S.bars; b++) {
@@ -167,14 +214,14 @@
       const cells = [];
       while (rem > 1e-6) {
         // pick a list first so each chosen list is equally likely, then a cell that fits the bar
-        const options = S.lists
+        const options = lists
           .map(function (l) { return CELLS.filter(function (c) { return c.list === l && c.beats <= rem + 1e-6; }); })
           .filter(function (a) { return a.length; });
         let cell;
         if (options.length) {
           cell = rnd(rnd(options));
         } else {
-          cell = QUARTER;
+          cell = S.ternary ? DOTTED_QUARTER : QUARTER;
           filled = true;
         }
         cells.push(cell);
@@ -183,7 +230,7 @@
       bars.push({ cells: cells });
     }
 
-    const model = buildModel(bars, bpb);
+    const model = buildModel(bars, bpb, !!S.ternary);
     if (S.ties) {
       const bounds = model.cellStarts.slice(1).map(function (s) { return s - 1; });
       bounds.forEach(function (i) { if (Math.random() < 0.3) model.tieAfter.add(i); });
@@ -457,15 +504,18 @@
   // layout: { origin, beatW } puts every note on one even grid shared by all bars, with each
   // notehead centred in its sixteenth slot and barlines on slot edges, so time moves at a
   // constant speed across barlines.
+  // Half the smallest grid slot (a sixteenth): 1/8 of a beat in simple time, 1/12 in compound time
+  const slotLead = function (ternary) { return ternary ? 1 / 12 : 0.125; };
   function drawVoice(ctx, stave, built, beats, pibs, layout) {
-    const voice = new VF.Voice({ num_beats: beats, beat_value: 4 }).setMode(VF.Voice.Mode.SOFT);
+    const voice = new VF.Voice(layout.ternary ? { num_beats: beats * 3, beat_value: 8 } : { num_beats: beats, beat_value: 4 }).setMode(VF.Voice.Mode.SOFT);
+    const lead = slotLead(layout.ternary);   // space before the first notehead: half the smallest slot
     voice.addTickables(built.notes);
     const w = stave.getNoteEndX() - stave.getNoteStartX() - 14;
     new VF.Formatter().joinVoices([voice]).format([voice], Math.max(40, w));
     const beatW = layout.beatW;
     const ns = stave.getNoteStartX();
     built.notes.forEach(function (sn, i) {
-      const centre = layout.origin + (pibs[i] + 0.125) * beatW;
+      const centre = layout.origin + (pibs[i] + lead) * beatW;
       sn.getTickContext().setX(centre - 6 - ns);   // tick x is roughly the notehead's left edge
     });
     // VexFlow adds its own padding; measure where the first notehead really lands and shift all
@@ -474,7 +524,7 @@
       const first = built.notes[0];
       first.setStave(stave);
       const real = (first.getNoteHeadBeginX() + first.getNoteHeadEndX()) / 2;
-      const want = layout.origin + (pibs[0] + 0.125) * beatW;
+      const want = layout.origin + (pibs[0] + lead) * beatW;
       const delta = real - want;
       if (Math.abs(delta) > 0.1) {
         built.notes.forEach(function (sn) { const tc = sn.getTickContext(); tc.setX(tc.getX() - delta); });
@@ -509,14 +559,23 @@
     get pulse() { return S.aids && S.pulse; }
   };
   let runGradSeq = 0;
-  function drawGrid(svg, stave, anchors, info, bpb, shift) {
+  function drawGrid(svg, stave, anchors, info, bpb, shift, ternary) {
     function xAt(p) { return xAtIn(anchors, p); }
     const y = stave.getYForLine(2) + (S.counts ? 64 : 34) + (shift || 0);
     const NS = 'http://www.w3.org/2000/svg';
 
     // Build the slots: 1 e & a per beat, or 1 & a when the beat holds a triplet
     const slots = [];
-    for (let b = 0; b < bpb; b++) {
+    for (let b = 0; b < bpb && ternary; b++) {
+      // compound time: 1 & a on the eighths, or 1 ta & ta a ta when the beat has sixteenths
+      const sixths = info.some(function (nt) {
+        return nt.p >= b - 1e-6 && nt.p < b + 1 - 1e-6 && Math.abs(nt.p * 3 - Math.round(nt.p * 3)) > 1e-3;
+      });
+      const subs = sixths ? [0, 1, 2, 3, 4, 5].map(function (k) { return k / 6; }) : [0, T3, 2 * T3];
+      const labs = sixths ? [String(b + 1), 'ta', '&', 'ta', 'a', 'ta'] : [String(b + 1), '&', 'a'];
+      subs.forEach(function (s, i) { slots.push({ p: b + s, label: labs[i] }); });
+    }
+    for (let b = 0; b < bpb && !ternary; b++) {
       const trip = info.some(function (nt) {
         return nt.p >= b - 1e-6 && nt.p < b + 1 - 1e-6 && Math.abs(nt.p * 4 - Math.round(nt.p * 4)) > 1e-3;
       });
@@ -682,10 +741,20 @@
   // that fit 3 per line become 2 + 2 instead of 3 + 1.
   function barsPerLine(model, avail) {
     const shortest = model.flat.reduce(function (m, f) { return f.rest ? m : Math.min(m, f.d); }, 4);
-    let slot = shortest <= 0.26 ? 19 : (shortest <= 0.34 ? 18 : (shortest <= 0.5 ? 13 : 10));   // px per sixteenth
-    if (G.grid) slot = Math.max(slot, 16);          // room for each syllable
-    if (G.pulse) slot = Math.max(slot, 14);
-    const barW = model.bpb * 4 * slot + 24;
+    let barW;
+    if (model.ternary) {
+      // compound beat: six sixteenth slots when there are sixteenths, else three eighth slots
+      const six = shortest <= 0.17;
+      let slot = six ? 18 : (shortest <= 0.34 ? 26 : 20);
+      if (G.grid) slot = Math.max(slot, six ? 18 : 16);
+      if (G.pulse) slot = Math.max(slot, 14);
+      barW = model.bpb * (six ? 6 : 3) * slot + 24;
+    } else {
+      let slot = shortest <= 0.26 ? 19 : (shortest <= 0.34 ? 18 : (shortest <= 0.5 ? 13 : 10));   // px per sixteenth
+      if (G.grid) slot = Math.max(slot, 16);          // room for each syllable
+      if (G.pulse) slot = Math.max(slot, 14);
+      barW = model.bpb * 4 * slot + 24;
+    }
     const maxPer = Math.max(1, Math.min(6, Math.floor(avail / barW)));
     const n = model.bars.length;
     const lines = Math.ceil(n / maxPer);
@@ -721,8 +790,8 @@
     // Phones: a smaller time signature, so it doesn't eat the first bar
     const small = W < 520;
     const makeTS = function () {
-      const ts = new VF.TimeSignature(bpb + '/4', small ? 8 : 15);
-      if (small) { ts.point = Math.round(ts.point * 0.7); ts.setTimeSig(bpb + '/4'); }
+      const ts = new VF.TimeSignature(meterLabel(bpb, model.ternary), small ? 8 : 15);
+      if (small) { ts.point = Math.round(ts.point * 0.7); ts.setTimeSig(meterLabel(bpb, model.ternary)); }
       return ts;
     };
     // Space before the first note, kept the same on every line so beats line up top to bottom
@@ -785,7 +854,7 @@
         labels = [];
         for (let j = 0; j < count; j++) {
           const f = model.flat[fi + j];
-          const s = syllable(f.pib);
+          const s = syllable(f.pib, model.ternary);
           labels.push(model.tieAfter.has(fi + j - 1) ? '(' + s + ')' : s);
         }
       }
@@ -797,7 +866,7 @@
       const built = buildCells(bar.cells, labels, pitches);
       const pibs = [];
       for (let j = 0; j < count; j++) pibs.push(model.flat[fi + j].pib);
-      const beatW = drawVoice(ctx, stave, built, bpb, pibs, { origin: x + (c === 0 ? tsExtra : 0), beatW: bw / bpb });
+      const beatW = drawVoice(ctx, stave, built, bpb, pibs, { origin: x + (c === 0 ? tsExtra : 0), beatW: bw / bpb, ternary: model.ternary });
       const anchors = makeAnchors(built.notes, pibs, bpb, beatW);
       const lineY = stave.getYForLine(2);
       const geo = { anchors: anchors, beatW: beatW, x2: x + w, lineY: lineY, landY: lineY - 52 - topShift, row: r, rowTop: r * rowH, rowH: rowH,
@@ -806,7 +875,7 @@
       if (G.grid || G.pulse) {
         const info = [];
         for (let j = 0; j < count; j++) info.push({ p: pibs[j], attack: !model.tieAfter.has(fi + j - 1), rest: !!model.flat[fi + j].rest });
-        geo.grid = drawGrid(svg, stave, anchors, info, bpb, gridShift);
+        geo.grid = drawGrid(svg, stave, anchors, info, bpb, gridShift, model.ternary);
       }
       highlightTargets(svg, built, claimedStems).forEach(function (t) { view.els.push(t); });
       built.notes.forEach(function (sn) { flatSN.push(sn); rowOf.push(r); });
@@ -832,7 +901,7 @@
         let p = 0;
         model.bars[bi].cells.forEach(function (cell, ci) {
           if (cell.id !== 'rest') {
-            const x0 = g.anchors[0].x - g.beatW * 0.125 + p * g.beatW;
+            const x0 = g.anchors[0].x - g.beatW * slotLead(model.ternary) + p * g.beatW;
             const t = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
             t.setAttribute('class', 'cell-hit');
             t.setAttribute('x', (x0 + 1).toFixed(1));
@@ -861,7 +930,7 @@
       view.dictation = true;
       view.barGeo.forEach(function (g, bi) {
         for (let k = 0; k < bpb; k++) {
-          const x0 = g.anchors[0].x - g.beatW * 0.125 + k * g.beatW;
+          const x0 = g.anchors[0].x - g.beatW * slotLead(model.ternary) + k * g.beatW;
           const t = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
           t.setAttribute('class', 'beat-tile');
           t.setAttribute('x', (x0 + 1).toFixed(1));
@@ -1039,8 +1108,8 @@
     if (kind === 'notes') {
       model.flat.forEach(function (f, i) { if (!model.tieAfter.has(i - 1)) pts.push(f.pos); });
     } else {
-      const step = 1 / (S.sub || 1);   // follows the metronome's clicks per beat
-      for (let k = 0; k < model.total * S.sub; k++) pts.push(k * step);
+      const per = clicksPerBeat(model.ternary);   // follows the metronome's clicks per beat
+      for (let k = 0; k < model.total * per; k++) pts.push(k / per);
     }
     pts.push(model.total);
     return { g: g, ball: ball, halo: halo, trail: trail, pts: pts, hist: [], kind: kind, lane: lane };
@@ -1064,7 +1133,7 @@
     if (kind === 'notes') {
       model.flat.forEach(function (f, i) { if (!model.tieAfter.has(i - 1)) pts.push(f.pos); });
     } else {
-      const per = kind === 'metro' ? (S.sub || 1) : 1;
+      const per = kind === 'metro' ? clicksPerBeat(model.ternary) : 1;
       for (let k = 0; k < model.total * per; k++) pts.push(k / per);
     }
     pts.push(model.total);
@@ -1096,7 +1165,8 @@
     // the hop height comes from how far we are between landing points.
     const here = ballXY(view, Math.min(pos, view.model.total - 1e-6));
     // taller arcs so the two balls separate clearly in flight (they share a lane and meet on landings)
-    const H = B.kind === 'notes' ? Math.min(36, 12 + (b - a) * 16) : (S.sub === 4 ? 12 : (S.sub === 2 ? 18 : 26));
+    const cpb = clicksPerBeat(view.model.ternary);
+    const H = B.kind === 'notes' ? Math.min(36, 12 + (b - a) * 16) : (cpb >= 4 ? 12 : (cpb >= 2 ? 18 : 26));
     const x = here.x;
     const y = here.land - B.lane * 24 - H * 4 * frac * (1 - frac);
     B.g.style.display = '';
@@ -1334,7 +1404,7 @@
       let dur = f.d, j = i;
       while (model.tieAfter.has(j) && j + 1 < model.flat.length) { j++; dur += model.flat[j].d; }
       return {
-        pos: f.pos, d: f.d, attack: !tiedFrom && !f.rest, dur: dur, w: metricWeight(f.pib),
+        pos: f.pos, d: f.d, attack: !tiedFrom && !f.rest, dur: dur, w: metricWeight(f.pib, model.ternary),
         midi: (model.voices && S.melody && model === score && model.voices[0].pitch[i]) ? model.voices[0].pitch[i].midi : null,
         el: function () { const v = getView(); return (!f.rest && v && v.els[i]) || null; }
       };
@@ -1397,7 +1467,7 @@
     svg.setAttribute('viewBox', both ? '0 0 460 200' : '0 0 230 200');
     svg.setAttribute('class', 'cond-svg');
     svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', 'Conducting pattern for ' + bpb + '/4');
+    svg.setAttribute('aria-label', 'Conducting pattern for ' + meterLabel(bpb, score.ternary));
     host.appendChild(svg);
     // Depth (z) is drawn in perspective: moving in toward the body pulls a point toward a
     // vanishing point above the centre, so the pattern visibly goes "into" the page.
@@ -1840,10 +1910,11 @@
 
     function schedulePass(s) {
       if (S.metro && !opts.noMetro) {
-        // S.sub clicks per beat: 1 = beats only, 2 = eighths, 4 = sixteenths
+        // clicks per beat: 1 = beats only, then eighths, then sixteenths (see clicksPerBeat)
+        const cpb = clicksPerBeat(opts.ternary);
         for (let k = 0; k < opts.totalBeats; k++) {
-          for (let j = 0; j < S.sub; j++) {
-            click(s + (k + j / S.sub) * spb, j === 0 && k % opts.accentEvery === 0, false, j > 0);
+          for (let j = 0; j < cpb; j++) {
+            click(s + (k + j / cpb) * spb, j === 0 && k % opts.accentEvery === 0, false, j > 0);
           }
         }
       }
@@ -1950,9 +2021,15 @@
         regenerate();
       });
     });
-    $('#meter-' + S.meter).checked = true;
+    // meters: 2/4 to 5/4, and compound 6/8 to 15/8 (value 'c2' = two dotted-quarter beats)
+    syncMeterUi();
     document.querySelectorAll('input[name="meter"]').forEach(function (r) {
-      r.addEventListener('change', function () { S.meter = Number(r.value); regenerate(); });
+      r.addEventListener('change', function () {
+        S.ternary = r.value.charAt(0) === 'c';
+        S.meter = Number(r.value.replace('c', ''));
+        syncMeterUi();
+        regenerate();
+      });
     });
     // number of bars: one button per choice, 1 to 8
     $('#bars-' + S.bars).checked = true;
@@ -2012,10 +2089,10 @@
       });
     });
     $('#bpm').value = S.bpm;
-    $('#bpmOut').textContent = '♩=' + S.bpm;
+    syncMeterUi();
     $('#bpm').addEventListener('input', function () {
       S.bpm = Number($('#bpm').value);
-      $('#bpmOut').textContent = '♩=' + S.bpm;
+      syncMeterUi();
       save();
     });
     $('#bpm').addEventListener('change', function () { if (practicePlaying) startPractice(); });
@@ -2120,12 +2197,24 @@
     applyMix();
   }
 
+  // Meter-dependent labels: the checked meter, the tempo unit (a dotted quarter in compound
+  // time) and the metronome's clicks per beat (1 2 4 in x/4, 1 3 6 in x/8)
+  function syncMeterUi() {
+    const r = $('#meter-' + (S.ternary ? 'c' : '') + S.meter);
+    if (r) r.checked = true;
+    $('#bpmOut').textContent = (S.ternary ? '♩.=' : '♩=') + S.bpm;
+    [1, 2, 4].forEach(function (v) {
+      const lab = document.querySelector('#sub-' + v + ' + span');
+      if (lab) lab.textContent = S.ternary ? { 1: 1, 2: 3, 4: 6 }[v] : v;
+    });
+  }
+
   // Put every control back in step with S (used after a reset)
   function syncPanel() {
     syncMixer();
     syncColors();
     LISTS.forEach(function (L) { $('#list-' + L.id).checked = S.lists.indexOf(L.id) >= 0; });
-    $('#meter-' + S.meter).checked = true;
+    syncMeterUi();
     $('#nt-' + S.notation).checked = true;
     $('#opt-melody').checked = !!S.melody;
     $('#keySel').value = S.key;
@@ -2143,7 +2232,7 @@
     document.body.classList.toggle('no-boxes', !S.boxes);
     document.body.classList.toggle('no-circles', !S.circles);
     $('#bpm').value = S.bpm;
-    $('#bpmOut').textContent = '♩=' + S.bpm;
+    syncMeterUi();
   }
 
   // A settings change (or New rhythm) makes fresh rhythms for both Practice and Dictation
@@ -2161,11 +2250,11 @@
     $('#score').hidden = hide;
     $('#hiddenMsg').hidden = !hide;
     if (!hide) renderScore();
-    const names = LISTS.filter(function (L) { return S.lists.indexOf(L.id) >= 0; }).map(function (L) { return L.name; }).join(', ');
-    $('#scoreMeta').textContent = score.bars.length + (score.bars.length === 1 ? ' bar' : ' bars') + ' · ' + score.bpb + '/4 · ' + names;
+    const names = LISTS.filter(function (L) { return meterLists().indexOf(L.id) >= 0; }).map(function (L) { return L.name; }).join(', ');
+    $('#scoreMeta').textContent = score.bars.length + (score.bars.length === 1 ? ' bar' : ' bars') + ' · ' + meterLabel(score.bpb, score.ternary) + ' · ' + names;
     const note = $('#fillNote');
     if (score.filled) {
-      note.textContent = 'Your selected lists only have two-beat cells, so leftover single beats in ' + score.bpb + '/4 are filled with quarter notes.';
+      note.textContent = 'Your selected lists only have two-beat cells, so leftover single beats in ' + meterLabel(score.bpb, score.ternary) + ' are filled with quarter notes.';
       note.hidden = false;
     } else {
       note.hidden = true;
@@ -2192,7 +2281,7 @@
     const ok = play({
       seq: makeSeq(score, function () { return scoreView; }),
       totalBeats: score.total,
-      accentEvery: score.bpb,
+      accentEvery: score.bpb, ternary: score.ternary,
       countIn: S.countIn ? score.bpb : 0,
       loop: S.loop,
       onPos: function (p) { movePlayhead(scoreView, p); },
@@ -2220,8 +2309,8 @@
   function renderDictation() {
     if (!dscore) dscore = makeRhythm();
     dview = renderRhythm($('#dscore'), dscore, { timeSig: true, barlines: true, minWidth: 300, dictation: true });
-    const names = LISTS.filter(function (L) { return S.lists.indexOf(L.id) >= 0; }).map(function (L) { return L.name; }).join(', ');
-    $('#dMeta').textContent = dscore.bars.length + (dscore.bars.length === 1 ? ' bar' : ' bars') + ' · ' + dscore.bpb + '/4 · ' + names;
+    const names = LISTS.filter(function (L) { return meterLists().indexOf(L.id) >= 0; }).map(function (L) { return L.name; }).join(', ');
+    $('#dMeta').textContent = dscore.bars.length + (dscore.bars.length === 1 ? ' bar' : ' bars') + ' · ' + meterLabel(dscore.bpb, dscore.ternary) + ' · ' + names;
     // one button per bar for bar-by-bar playback
     const box = $('#barBtns');
     holdPage();   // keep the page height while this redraws
@@ -2265,7 +2354,7 @@
     return Object.assign({
       seq: makeSeq(dscore, function () { return dview; }),
       totalBeats: dscore.total,
-      accentEvery: dscore.bpb,
+      accentEvery: dscore.bpb, ternary: dscore.ternary,
       countIn: S.countIn ? dscore.bpb : 0,
       loop: false,
       onPos: function (p) { movePlayhead(dview, p); },
@@ -2370,18 +2459,20 @@
   // The student assembles a rhythm from list cells. comp.bars[b] is a list of cell ids;
   // empty beats are filled with quarter rests for display (rests are not played).
   const REST = { id: 'rest', list: '-', name: 'Rest', notes: [{ d: 1, vf: 'q', dots: 0, rest: true }], beams: [], beats: 1 };
+  const REST_DQ = { id: 'rest', list: '-', name: 'Rest', notes: [{ d: 1, vf: 'q', dots: 1, rest: true }], beams: [], beats: 1, ternary: true };   // one compound beat
+  const compMeter = function () { return (S.ternary ? 'c' : '') + S.meter; };   // e.g. '4' = 4/4, 'c4' = 12/8
   const cellById = function (id) { return CELLS.find(function (c) { return c.id === id; }); };
   let comp = null, bmodel = null, bview = null, buildPlaying = false;
   const buildHistory = [];
   function loadComp() {
     try { comp = JSON.parse(localStorage.getItem('eur-build') || 'null'); } catch (e) { comp = null; }
-    if (!comp || !Array.isArray(comp.bars)) comp = { meter: S.meter, bars: [] };
+    if (!comp || !Array.isArray(comp.bars)) comp = { meter: compMeter(), bars: [] };
   }
   function saveComp() { try { localStorage.setItem('eur-build', JSON.stringify(comp)); } catch (e) { /* ignore */ } }
   const barBeats = function (ids) { return ids.reduce(function (a, id) { const c = cellById(id); return a + (c ? c.beats : 0); }, 0); };
   function fitComp() {
     // keep the composition in step with the meter and number of bars
-    if (comp.meter !== S.meter) comp = { meter: S.meter, bars: [] };
+    if (String(comp.meter) !== compMeter()) comp = { meter: compMeter(), bars: [] };
     while (comp.bars.length < S.bars) comp.bars.push([]);
     comp.bars.length = S.bars;
   }
@@ -2394,13 +2485,13 @@
     const bars = comp.bars.map(function (ids) {
       const cells = ids.map(cellById).filter(Boolean);
       let rest = bpb - barBeats(ids);
-      while (rest > 1e-6) { cells.push(REST); rest -= 1; }
+      while (rest > 1e-6) { cells.push(S.ternary ? REST_DQ : REST); rest -= 1; }
       return { cells: cells };
     });
-    bmodel = buildModel(bars, bpb);
+    bmodel = buildModel(bars, bpb, !!S.ternary);
     bview = renderRhythm($('#bscore'), bmodel, { timeSig: true, barlines: true, minWidth: 300, build: true });
     const filled = comp.bars.reduce(function (a, ids) { return a + barBeats(ids); }, 0);
-    $('#bMeta').textContent = filled + ' of ' + (bpb * S.bars) + ' beats filled · ' + bpb + '/4';
+    $('#bMeta').textContent = filled + ' of ' + (bpb * S.bars) + ' beats filled · ' + meterLabel(bpb, !!S.ternary);
     buildPalette();
     syncBuildBtns();
   }
@@ -2432,23 +2523,24 @@
     const pibs = [];
     let p = 0;
     cell.notes.forEach(function (nt) { pibs.push(p); p += nt.d; });
-    drawVoice(ctx, stave, built, beats, pibs, { origin: 6, beatW: (W - 12) / beats });
+    drawVoice(ctx, stave, built, beats, pibs, { origin: 6, beatW: (W - 12) / beats, ternary: cell.ternary });
   }
   let paletteKey = '';
   function buildPalette() {
-    const key = S.lists.join(',') + '|' + S.meter;
+    const key = S.lists.join(',') + '|' + compMeter();
     if (key === paletteKey && $('#palette').children.length) return;
     paletteKey = key;
     const root = $('#palette');
     holdPage();   // keep the page height while this redraws
     root.innerHTML = '';
-    LISTS.filter(function (L) { return S.lists.indexOf(L.id) >= 0; }).forEach(function (L) {
+    const lists = meterLists();   // only the lists that fit this meter (binary in x/4, ternary in x/8)
+    LISTS.filter(function (L) { return lists.indexOf(L.id) >= 0; }).forEach(function (L) {
       const grp = document.createElement('div');
       grp.className = 'pal-group';
       grp.innerHTML = '<span class="tag" data-list="' + L.id + '">' + L.name + '</span><div class="pal-items"></div>';
       root.appendChild(grp);
       const items = grp.querySelector('.pal-items');
-      CELLS.filter(function (c) { return c.list === L.id && c.beats <= S.meter; }).forEach(function (cell) {
+      CELLS.filter(function (c) { return c.list === L.id && c.beats <= S.meter + 1e-6; }).forEach(function (cell) {
         const it = document.createElement('div');
         it.setAttribute('role', 'button');
         it.tabIndex = 0;
@@ -2523,7 +2615,7 @@
     const q = pt.matrixTransform(svg.getScreenCTM().inverse());
     let hit = null;
     bview.barGeo.forEach(function (g, b) {
-      const x0 = g.anchors[0].x - g.beatW * 0.125;
+      const x0 = g.anchors[0].x - g.beatW * slotLead(!!S.ternary);
       if (q.y >= g.rowTop && q.y < g.rowTop + g.rowH && q.x >= x0 - 8 && q.x <= x0 + S.meter * g.beatW + 8) {
         hit = { b: b, pib: Math.max(0, Math.min(S.meter, (q.x - x0) / g.beatW)) };
       }
@@ -2535,7 +2627,7 @@
     if (!bmodel || !bmodel.flat.some(function (f) { return !f.rest; })) { flash('Add some rhythms first.'); return; }
     const ok = play({
       seq: makeSeq(bmodel, function () { return bview; }),
-      totalBeats: bmodel.total, accentEvery: bmodel.bpb,
+      totalBeats: bmodel.total, accentEvery: bmodel.bpb, ternary: bmodel.ternary,
       countIn: S.countIn ? bmodel.bpb : 0, loop: S.loop,
       onPos: function (p) { movePlayhead(bview, p); },
       onCount: function (n) { showCount($('#bCard'), n); },
@@ -2577,7 +2669,7 @@
       CELLS.filter(function (c) { return c.list === L.id; }).forEach(function (cell) {
         const card = document.createElement('article');
         card.className = 'gl-card';
-        const beatsTxt = cell.beats === 1 ? '1 beat' : cell.beats + ' beats';
+        const beatsTxt = (cell.beats === 1 ? '1 beat' : cell.beats + ' beats') + (cell.ternary ? ' (dotted quarter) · 6/8–15/8' : '');
         card.innerHTML = '<div class="gl-notation vf"></div><div class="gl-info"><h3>' + cell.name + '</h3><p class="counts">' + cellCounts(cell) + '</p><p>' + beatsTxt + '</p></div><button class="play-mini" type="button" aria-label="Play ' + cell.name + '">' + ICON_PLAY + '</button>';
         grid.appendChild(card);
         const entry = {
@@ -2594,7 +2686,7 @@
           const ok = play({
             seq: makeSeq(m, function () { return entry.view; }),
             totalBeats: m.total,
-            accentEvery: m.bpb,
+            accentEvery: m.bpb, ternary: m.ternary,
             countIn: S.countIn ? Math.max(2, m.bpb) : 0,
             loop: S.loop,
             onPos: function (p) { movePlayhead(entry.view, p); },
@@ -2719,12 +2811,14 @@
   // Folds the lists / meter / bars panel down to one line (handy on a phone in landscape).
   // The choice is remembered; the score re-renders to use the freed width.
   function panelSummary() {
-    $('#panelSum').textContent = S.bars + (S.bars === 1 ? ' bar' : ' bars') + ' · ' + S.meter + '/4' + (S.melody ? ' · melody' : '');
+    $('#panelSum').textContent = S.bars + (S.bars === 1 ? ' bar' : ' bars') + ' · ' + meterLabel(S.meter, !!S.ternary) + (S.melody ? ' · melody' : '');
     // each section's dropdown header (phones) shows its current choice
-    const short = { L1: '1', L2: '2', A2: '2 alt', L3: '3' };
+    // the lists actually used in this meter: binary in x/4, ternary in x/8
+    const short = { L1: '1', L2: '2', A2: '2 alt', L3: '3', T1: 'T1' };
+    const used = meterLists();
     const sums = {
-      lists: S.lists.length ? LISTS.filter(function (L) { return S.lists.indexOf(L.id) >= 0; }).map(function (L) { return short[L.id]; }).join(', ') : 'none',
-      meter: S.meter + '/4',
+      lists: LISTS.filter(function (L) { return used.indexOf(L.id) >= 0; }).map(function (L) { return short[L.id]; }).join(', '),
+      meter: meterLabel(S.meter, !!S.ternary),
       melody: S.melody ? (KEYS[S.key] || KEYS.C).name : 'Off',
       bars: String(S.bars),
       options: S.ties ? 'on' : 'off'
