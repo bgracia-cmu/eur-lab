@@ -1629,6 +1629,11 @@
       lim.connect(actx.destination);
       actx.rhythmBus.connect(lim);
       actx.metroBus.connect(lim);
+      // the Metronome on/off switch: a gate in front of the metronome bus, so turning it off
+      // silences clicks that are already scheduled (the count-in bypasses it)
+      actx.metroGate = actx.createGain();
+      actx.metroGate.gain.value = S.metro ? 1 : 0;
+      actx.metroGate.connect(actx.metroBus);
       applyMix();
     }
     if (actx.state === 'suspended') actx.resume();
@@ -1823,11 +1828,12 @@
   // Each metronome sound is scaled so a plain beat is about as loud as an instrument note on
   // a beat (measured: RMS over the loudest 60 ms), so the two volume sliders cover the same range.
   const METRO_NORM = { click: 5.2, woodblock: 3.85, cowbell: 4.7, hihat: 4.0 };
-  function click(t, accent, loud, sub) {
+  // gated: a metronome beat (silenced by the Metronome switch); count-in clicks are not gated
+  function click(t, accent, loud, sub, gated) {
     const ctx = ac();
     const out = ctx.createGain();
     out.gain.value = METRO_NORM[S.metroSound] || METRO_NORM.click;
-    out.connect(ctx.metroBus);
+    out.connect(gated ? ctx.metroGate : ctx.metroBus);
     const level = sub ? 0.45 : (loud ? 1.4 : 1) * (accent ? 1 : 0.7);   // count-in clicks a little louder
     const kind = S.metroSound;
     if (kind === 'woodblock') {
@@ -1914,12 +1920,12 @@
     const passLen = opts.totalBeats * spb;
 
     function schedulePass(s) {
-      if (S.metro && !opts.noMetro) {
+      if (!opts.noMetro) {   // always scheduled; the Metronome switch opens or closes the gate
         // clicks per beat: 1 = beats only, then eighths, then sixteenths (see clicksPerBeat)
         const cpb = clicksPerBeat(opts.ternary);
         for (let k = 0; k < opts.totalBeats; k++) {
           for (let j = 0; j < cpb; j++) {
-            click(s + (k + j / cpb) * spb, j === 0 && k % opts.accentEvery === 0, false, j > 0);
+            click(s + (k + j / cpb) * spb, j === 0 && k % opts.accentEvery === 0, false, j > 0, true);
           }
         }
       }
@@ -2055,6 +2061,7 @@
         else if (k === 'aids') { document.body.classList.toggle('no-aids', !S.aids); refreshViews(); }
         else if (k === 'counts' || k === 'beatLines' || k === 'beatMarks' || k === 'runFill' || k === 'grid' || k === 'pulse' || k === 'tracer' || k === 'metroBall') refreshViews();
         else if (k === 'boxes') document.body.classList.toggle('no-boxes', !S.boxes);
+        else if (k === 'metro' && actx) actx.metroGate.gain.setTargetAtTime(S.metro ? 1 : 0, actx.currentTime, 0.01);   // takes effect mid-play
         else if (k === 'beatColors') document.body.classList.toggle('beat-colors', !!S.beatColors);
         else if (k === 'circles') { document.body.classList.toggle('no-circles', !S.circles); refreshViews(); }
         else if (k === 'highlight' || k === 'playhead') clearHighlights();
@@ -2238,6 +2245,7 @@
     document.body.classList.toggle('no-circles', !S.circles);
     $('#bpm').value = S.bpm;
     syncMeterUi();
+    if (actx) actx.metroGate.gain.setTargetAtTime(S.metro ? 1 : 0, actx.currentTime, 0.01);
   }
 
   // A settings change (or New rhythm) makes fresh rhythms for both Practice and Dictation
@@ -3082,23 +3090,28 @@
   }
 
   // ---------- What's new ----------
-  // One entry per release, newest first. To ship a change: add an entry at the top with the next
-  // version number. A returning visitor sees every entry newer than the last version they saw
+  // One entry per release, newest first, with its new features and its bug fixes. To ship a
+  // change: add an entry at the top with the next version number. A returning visitor sees every entry newer than the last version they saw
   // (stored in localStorage); a first-time visitor gets the tour instead.
   const CHANGES = [
-    { v: 4, date: 'November 10, 2026', items: [
-      'The metronome is now as loud as the instrument at the same volume setting (it was much quieter).',
-      'This What’s new card shows what changed since your last visit.'
+    { v: 5, date: 'November 10, 2026', features: [], fixes: [
+      'Turning the metronome off while a rhythm is playing now silences it straight away.'
     ] },
-    { v: 3, date: 'November 10, 2026', items: [
+    { v: 4, date: 'November 10, 2026', features: [
+      'This What’s new card shows what changed since your last visit.'
+    ], fixes: [
+      'The metronome is now as loud as the instrument at the same volume setting (it was much quieter).'
+    ] },
+    { v: 3, date: 'November 10, 2026', features: [
       'Ternary List 1, and compound meters 6/8, 9/8, 12/8 and 15/8 (pick them under Meter).',
       'In compound time the tempo is per dotted quarter, the metronome clicks 1, 3 or 6 times a beat, and the counting reads 1 & a / 1 ta & ta a ta.'
-    ] },
-    { v: 2, date: 'November 9, 2026', items: [
+    ], fixes: [] },
+    { v: 2, date: 'November 9, 2026', features: [
       'Rhythm settings are a row of buttons above the score; each opens a small menu.',
       'Notation aids: one switch for a plain score without the counting marks.',
-      'Bars is chosen with 1–8 buttons. Options is now the Settings page.',
-      'Scrolling and settings no longer make the page jump on phones.'
+      'Bars is chosen with 1–8 buttons. Options is now the Settings page.'
+    ], fixes: [
+      'Scrolling and changing settings no longer make the page jump on phones.'
     ] }
   ];
   const VERSION = CHANGES[0].v;
@@ -3114,17 +3127,19 @@
       '<div class="tour-tip sc-tip" role="dialog" aria-modal="true" aria-labelledby="wnTitle">' +
       '<h4 id="wnTitle">What’s new</h4><div class="wn-list"></div>' +
       '<div class="tour-btns"><span></span><button type="button" class="btn btn-small primary wn-ok">Got it</button></div></div>';
+    // grouped across every unseen release: new features first, then bug fixes
     const list = root.querySelector('.wn-list');
-    fresh.forEach(function (c) {
-      const sec = document.createElement('section');
+    [['New', 'features'], ['Fixed', 'fixes']].forEach(function (grp) {
+      const items = [];
+      fresh.forEach(function (c) { (c[grp[1]] || []).forEach(function (t) { items.push(t); }); });
+      if (!items.length) return;
       const h = document.createElement('p');
       h.className = 'wn-date';
-      h.textContent = c.date;
+      h.textContent = grp[0];
       const ul = document.createElement('ul');
-      c.items.forEach(function (t) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
-      sec.appendChild(h);
-      sec.appendChild(ul);
-      list.appendChild(sec);
+      items.forEach(function (t) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+      list.appendChild(h);
+      list.appendChild(ul);
     });
     document.body.appendChild(root);
     const close = function () {
