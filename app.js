@@ -3127,19 +3127,30 @@
       '<div class="tour-tip sc-tip" role="dialog" aria-modal="true" aria-labelledby="wnTitle">' +
       '<h4 id="wnTitle">What’s new</h4><div class="wn-list"></div>' +
       '<div class="tour-btns"><span></span><button type="button" class="btn btn-small primary wn-ok">Got it</button></div></div>';
-    // grouped across every unseen release: new features first, then bug fixes
+    // one section per date (releases on the same day are merged), each with New and Fixed
     const list = root.querySelector('.wn-list');
-    [['New', 'features'], ['Fixed', 'fixes']].forEach(function (grp) {
-      const items = [];
-      fresh.forEach(function (c) { (c[grp[1]] || []).forEach(function (t) { items.push(t); }); });
-      if (!items.length) return;
+    const days = [];
+    fresh.forEach(function (c) {
+      let d = days.filter(function (x) { return x.date === c.date; })[0];
+      if (!d) { d = { date: c.date, features: [], fixes: [] }; days.push(d); }
+      d.features = d.features.concat(c.features || []);
+      d.fixes = d.fixes.concat(c.fixes || []);
+    });
+    days.forEach(function (d) {
       const h = document.createElement('p');
       h.className = 'wn-date';
-      h.textContent = grp[0];
-      const ul = document.createElement('ul');
-      items.forEach(function (t) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+      h.textContent = d.date;
       list.appendChild(h);
-      list.appendChild(ul);
+      [['New', d.features], ['Fixed', d.fixes]].forEach(function (grp) {
+        if (!grp[1].length) return;
+        const sub = document.createElement('p');
+        sub.className = 'wn-kind';
+        sub.textContent = grp[0];
+        const ul = document.createElement('ul');
+        grp[1].forEach(function (t) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+        list.appendChild(sub);
+        list.appendChild(ul);
+      });
     });
     document.body.appendChild(root);
     const close = function () {

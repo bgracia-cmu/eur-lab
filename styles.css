@@ -405,9 +405,17 @@ line.cond-path { stroke-linecap: round; }
 /* sound check: the tour's card, centred over a dimmed page */
 .sound-check .sc-back { background: rgba(10, 14, 22, .55); }
 .sound-check .sc-tip { left: 50%; top: 50%; transform: translate(-50%, -50%); }
-.whats-new .sc-tip { width: min(400px, calc(100vw - 24px)); max-height: 80vh; overflow-y: auto; }
-.wn-list { margin: 0 0 12px; }
-.wn-date { margin: 8px 0 2px; font: 500 11px var(--font-mono); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.whats-new .sc-tip { width: min(400px, calc(100vw - 24px)); }
+/* the list scrolls inside the card (title and button stay put), with a scrollbar that is always shown */
+.wn-list { margin: 0 0 12px; max-height: min(55vh, 380px); overflow-y: auto; padding-right: 8px; }
+/* Firefox has no ::-webkit-scrollbar; elsewhere the standard properties would switch it off */
+@supports not selector(::-webkit-scrollbar) { .wn-list { scrollbar-width: thin; scrollbar-color: var(--line) var(--rule); } }
+.wn-list::-webkit-scrollbar { width: 8px; }
+.wn-list::-webkit-scrollbar-track { background: var(--rule); border-radius: 4px; }
+.wn-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.wn-list::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+.wn-date { margin: 12px 0 0; font: 500 11px var(--font-mono); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.wn-kind { margin: 6px 0 0; font-size: 13px; font-weight: 700; color: var(--ink); }
 .wn-list ul { margin: 0; padding-left: 18px; }
 .wn-list li { font-size: 14px; line-height: 1.45; margin: 3px 0; }
 .sc-again { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13px; color: var(--muted); cursor: pointer; }
