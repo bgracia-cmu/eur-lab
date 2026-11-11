@@ -151,7 +151,7 @@
     grid: true, pulse: false, circles: true, boxes: true, counts: false, highlight: true,
     staffFollow: 'notes', tracer: true, metroBall: false, playhead: true, playheadFollow: 'metro',
     inst: 'woodblock', volRhythm: 80, punch: true, metroSound: 'click', volMetro: 70,
-    conduct: 'off', notation: 'show', aids: true, beatLines: true, beatMarks: false, runFill: false, beatColors: false, melody: false, key: 'C', legato: false, exam: false, examPlays: 3, examGap: 20
+    conduct: 'off', notation: 'show', aids: true, beatLines: true, beatMarks: false, runFill: false, beatColors: false, wideScroll: false, melody: false, key: 'C', legato: false, exam: false, examPlays: 3, examGap: 20
   };
   let S = Object.assign({}, DEFAULTS);
   try {
@@ -559,14 +559,16 @@
     get pulse() { return S.aids && S.pulse; }
   };
   let runGradSeq = 0;
-  function drawGrid(svg, stave, anchors, info, bpb, shift, ternary) {
+  // lo..hi: the beats of the bar drawn on this line (a long bar can be split over two lines)
+  function drawGrid(svg, stave, anchors, info, bpb, shift, ternary, lo, hi) {
+    if (lo === undefined) { lo = 0; hi = bpb; }
     function xAt(p) { return xAtIn(anchors, p); }
     const y = stave.getYForLine(2) + (S.counts ? 64 : 34) + (shift || 0);
     const NS = 'http://www.w3.org/2000/svg';
 
     // Build the slots: 1 e & a per beat, or 1 & a when the beat holds a triplet
     const slots = [];
-    for (let b = 0; b < bpb && ternary; b++) {
+    for (let b = lo; b < hi - 1e-6 && ternary; b++) {
       // compound time: 1 & a on the eighths, or 1 ta & ta a ta when the beat has sixteenths
       const sixths = info.some(function (nt) {
         return nt.p >= b - 1e-6 && nt.p < b + 1 - 1e-6 && Math.abs(nt.p * 3 - Math.round(nt.p * 3)) > 1e-3;
@@ -575,7 +577,7 @@
       const labs = sixths ? [String(b + 1), 'ta', '&', 'ta', 'a', 'ta'] : [String(b + 1), '&', 'a'];
       subs.forEach(function (s, i) { slots.push({ p: b + s, label: labs[i] }); });
     }
-    for (let b = 0; b < bpb && !ternary; b++) {
+    for (let b = lo; b < hi - 1e-6 && !ternary; b++) {
       const trip = info.some(function (nt) {
         return nt.p >= b - 1e-6 && nt.p < b + 1 - 1e-6 && Math.abs(nt.p * 4 - Math.round(nt.p * 4)) > 1e-3;
       });
@@ -604,7 +606,7 @@
       return (prevX + slots[i].x) / 2 + 1.5;
     };
     const rightEdge = function (i) {
-      const nextX = i + 1 < slots.length ? slots[i + 1].x : xAt(bpb);
+      const nextX = i + 1 < slots.length ? slots[i + 1].x : xAt(hi);
       return (slots[i].x + nextX) / 2 - 1.5;
     };
     // Pulse circles sit under the syllables, or take their place when the 1 e & a row is off
@@ -739,7 +741,38 @@
   // How many bars fit on a line: each sixteenth slot needs enough room for the densest notes in
   // the rhythm (and for the 1 e & a syllables when shown). Lines are then balanced, so 4 bars
   // that fit 3 per line become 2 + 2 instead of 3 + 1.
-  function barsPerLine(model, avail) {
+  // Width one beat needs so its syllables (and their circles) sit side by side without
+  // touching, and its shortest notes have room
+  function minBeatW(model) {
+    const notes = model.flat.filter(function (f) { return !f.rest; });
+    const shortest = notes.reduce(function (m, f) { return Math.min(m, f.d); }, 4);
+    // syllables per beat: 1 e & a (simple), 1 & a or 1 ta & ta a ta (compound, with sixteenths)
+    const sixths = model.ternary && notes.some(function (f) { return Math.abs(f.pos * 3 - Math.round(f.pos * 3)) > 1e-3; });
+    const slots = model.ternary ? (sixths ? 6 : 3) : 4;
+    const slotW = G.grid ? (S.circles ? 17 : 14) : (G.pulse ? 13 : 0);
+    const noteW = 12 / shortest;   // about 12px for each of the shortest notes in a beat
+    return Math.max(slots * slotW, noteW);
+  }
+  // A single note of d beats ({ d, vf, dots }), for drawing part of a note cut by a line break
+  function noteFor(d, ternary) {
+    const table = ternary
+      ? [[2, 'h', 1], [1, 'q', 1], [2 / 3, 'q', 0], [0.5, '8', 1], [1 / 3, '8', 0], [1 / 6, '16', 0]]
+      : [[2, 'h', 0], [1.5, 'q', 1], [1, 'q', 0], [0.75, '8', 1], [0.5, '8', 0], [0.25, '16', 0]];
+    const hit = table.find(function (t) { return Math.abs(t[0] - d) < 1e-3; });
+    return hit ? { d: d, vf: hit[1], dots: hit[2] } : null;
+  }
+  // A tie between two drawn notes; across a line break it is drawn as two halves
+  function tieNotes(ctx, a, b, sameRow) {
+    if (sameRow) {
+      new VF.StaveTie({ first_note: a, last_note: b, first_indices: [0], last_indices: [0] }).setContext(ctx).draw();
+    } else {
+      new VF.StaveTie({ first_note: a, last_note: null, first_indices: [0], last_indices: [0] }).setContext(ctx).draw();
+      new VF.StaveTie({ first_note: null, last_note: b, first_indices: [0], last_indices: [0] }).setContext(ctx).draw();
+    }
+  }
+
+  // Width one bar needs to stay readable (syllables and circles don't overlap)
+  function barWidth(model) {
     const shortest = model.flat.reduce(function (m, f) { return f.rest ? m : Math.min(m, f.d); }, 4);
     let barW;
     if (model.ternary) {
@@ -755,6 +788,11 @@
       if (G.pulse) slot = Math.max(slot, 14);
       barW = model.bpb * 4 * slot + 24;
     }
+    return barW;
+  }
+
+  function barsPerLine(model, avail) {
+    const barW = Math.max(barWidth(model), model.bpb * minBeatW(model) + 24);
     const maxPer = Math.max(1, Math.min(6, Math.floor(avail / barW)));
     const n = model.bars.length;
     const lines = Math.ceil(n / maxPer);
@@ -782,7 +820,7 @@
     host.innerHTML = '';
     host.style.width = '';   // measure the real available width, not a width left from the last draw
     const view = { model: model, els: [], barGeo: [], playhead: null };
-    const W = Math.max(opts.minWidth || 200, host.clientWidth || opts.fallbackWidth || 700);
+    let W = Math.max(opts.minWidth || 200, host.clientWidth || opts.fallbackWidth || 700);
     const bpb = model.bpb;
     const melody = !!(opts.melody && model.voices && model.voices[0]);
     const mkey = melody ? (KEYS[model.keyId] || KEYS.C) : null;
@@ -807,8 +845,52 @@
     const topShift = melody ? 14 : 0, gridShift = melody ? 20 : 0;   // a five-line staff is taller
     // breathing room between a full line's last note and its end barline
     const endPad = small ? 8 : 16;
-    const perRow = opts.oneRow ? 1 : barsPerLine(model, W - tsExtra - endPad - 4);
-    const rows = Math.ceil(model.bars.length / perRow);
+    // Room for the notes: each beat needs enough width for its syllables (and circles) to sit
+    // side by side without touching. A line holds as many whole beats as fit at that width.
+    const fullW = W - 3 - tsExtra - endPad;
+    const beatNeed = minBeatW(model);
+    // Scroll long bars (Settings, off by default): a bar that doesn't fit keeps that width and
+    // the score scrolls sideways, following the playhead, instead of breaking the bar.
+    if (!opts.oneRow && S.wideScroll && bpb * beatNeed > fullW) {
+      W = Math.ceil(bpb * beatNeed + 3 + tsExtra + endPad);
+      view.scroll = true;
+    }
+    view.zoom = 1;   // screen px per drawing unit while scrolling
+    view.host = host;
+    host.scrollLeft = 0;
+    // Otherwise, when a whole bar doesn't fit (12/8 or 15/8 on a phone), every line holds the
+    // same number of beats (the last may be shorter) and bars run on from line to line, as
+    // engravers break a bar too long for the line: no barline at a break, a barline only where
+    // a bar really ends, and a note held across a break is written as two tied notes.
+    let lineBeats = 0;
+    if (!opts.oneRow && !view.scroll) {
+      const fit = Math.max(1, Math.floor((W - 3 - tsExtra - endPad) / beatNeed));
+      if (fit < bpb) lineBeats = fit;
+    }
+    view.split = lineBeats > 0;
+    // one item per stave: a bar, or the part of one on a line { bar, from, len, row, xBeat }
+    const items = [];
+    let perRow = 1, lineCap;
+    if (view.split) {
+      model.bars.forEach(function (bar, bi) {
+        let from = 0;
+        while (from < bpb - 1e-6) {
+          const abs = bi * bpb + from;
+          const row = Math.floor(abs / lineBeats + 1e-9);
+          const to = Math.min(bpb, (row + 1) * lineBeats - bi * bpb);
+          items.push({ bar: bi, from: from, len: to - from, row: row, xBeat: abs - row * lineBeats });
+          from = to;
+        }
+      });
+      lineCap = lineBeats;
+    } else {
+      perRow = opts.oneRow ? 1 : barsPerLine(model, W - tsExtra - endPad - 4);
+      model.bars.forEach(function (bar, bi) {
+        items.push({ bar: bi, from: 0, len: bpb, row: Math.floor(bi / perRow), xBeat: (bi % perRow) * bpb });
+      });
+      lineCap = perRow * bpb;
+    }
+    const rows = items[items.length - 1].row + 1;
     const gridRows = G.grid && G.pulse ? 42 : (G.grid ? 26 : (G.pulse ? 30 : 0));
     const ballRoom = (S.tracer || S.metroBall) ? 42 : 0;   // space above the staff for the balls' arcs
     const rowH = 104 + ballRoom + topShift + gridShift + (S.counts ? 18 : 0) + (gridRows && S.counts ? gridRows + 10 : gridRows);
@@ -821,92 +903,143 @@
     host.style.height = '';
     // let the drawing scale down to its box, so it can never force the page wider (phones)
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + (rows * rowH + 6));
-    svg.style.width = '100%';
+    svg.style.width = view.scroll ? W + 'px' : '100%';
     svg.style.maxWidth = W + 'px';
     svg.style.height = 'auto';
     svg.style.display = 'block';
-    const bw = (W - 3 - tsExtra - endPad) / perRow;
+    // width of one beat: the same on every line, so beats line up top to bottom
+    const unitW = (W - 3 - tsExtra - endPad) / lineCap;
 
-    const flatSN = [];
+    // first flat note index of each bar
+    const barFirst = [];
+    model.flat.forEach(function (f, i) { if (barFirst[f.bar] === undefined) barFirst[f.bar] = i; });
+    // first and last drawn note of each flat note (a note held across a line break is drawn twice)
+    const firstSN = [], lastSN = [], firstRow = [], lastRow = [];
     const claimedStems = new Set();
-    const rowOf = [];
-    let fi = 0;
-    model.bars.forEach(function (bar, bi) {
-      const r = Math.floor(bi / perRow), c = bi % perRow;
-      const x = 1 + (c === 0 ? 0 : tsExtra + c * bw);
-      const w = (c === 0 ? bw + tsExtra : bw) + (c === perRow - 1 ? endPad : 0);
+    items.forEach(function (it) {
+      const bi = it.bar, bar = model.bars[bi];
+      const r = it.row;
+      const lineStart = it.xBeat < 1e-6;
+      const endsLine = it.xBeat + it.len >= lineCap - 1e-6;
+      const segW = it.len * unitW;
+      const x = 1 + (lineStart ? 0 : tsExtra + it.xBeat * unitW);
+      const w = (lineStart ? segW + tsExtra : segW) + (endsLine ? endPad : 0);
       const stave = new VF.Stave(x, r * rowH - 6 + ballRoom + topShift, w);
       if (melody) {
-        if (c === 0) { stave.addClef('treble'); stave.addKeySignature(mkey.sig); }
+        if (lineStart) { stave.addClef('treble'); stave.addKeySignature(mkey.sig); }
       } else oneLine(stave);
-      if (opts.timeSig && bi === 0) stave.addModifier(makeTS());
+      if (opts.timeSig && bi === 0 && it.from === 0) stave.addModifier(makeTS());
+      const endsBar = it.from + it.len >= bpb - 1e-6;
       if (!opts.barlines) {
         stave.setBegBarType(BT.NONE);
         stave.setEndBarType(BT.NONE);
-      } else if (bi === model.bars.length - 1) {
-        stave.setEndBarType(BT.END);
+      } else {
+        if (it.from > 0) stave.setBegBarType(BT.NONE);        // this line carries on a bar
+        if (!endsBar) stave.setEndBarType(BT.NONE);           // the bar goes on past the line break
+        else if (bi === model.bars.length - 1) stave.setEndBarType(BT.END);
       }
       stave.setContext(ctx).draw();
 
-      let labels = null;
-      const count = bar.cells.reduce(function (a, cl) { return a + cl.notes.length; }, 0);
-      if (S.counts) {
-        labels = [];
-        for (let j = 0; j < count; j++) {
-          const f = model.flat[fi + j];
-          const s = syllable(f.pib, model.ternary);
-          labels.push(model.tieAfter.has(fi + j - 1) ? '(' + s + ')' : s);
+      // The notes in this segment. A note that runs past either end is cut there and drawn as
+      // the part that falls inside (tied to the rest of it on the other line).
+      const lo = it.from, hi = it.from + it.len;
+      const cells = [], parts = [];   // parts: { fi, p, head } per drawn note
+      let cp = 0, fi = barFirst[bi];
+      bar.cells.forEach(function (cl) {
+        const map = [];
+        const notes = [];
+        let np = cp;
+        cl.notes.forEach(function (nt, j) {
+          const s0 = np, e0 = np + nt.d;
+          np = e0;
+          if (e0 > lo + 1e-6 && s0 < hi - 1e-6) {
+            const ps = Math.max(s0, lo), pe = Math.min(e0, hi);
+            const cut = ps > s0 + 1e-6 || pe < e0 - 1e-6;
+            const shown = cut ? (noteFor(pe - ps, model.ternary) || nt) : nt;
+            map[j] = cut ? -1 : notes.length;
+            notes.push(shown);
+            parts.push({ fi: fi + j, p: ps, head: ps <= s0 + 1e-6 });
+          }
+        });
+        if (notes.length) {
+          const keep = function (g) { return g.every(function (j) { return map[j] !== undefined && map[j] >= 0; }); };
+          const remap = function (g) { return g.map(function (j) { return map[j]; }); };
+          cells.push({
+            notes: notes,
+            beams: (cl.beams || []).filter(keep).map(remap),
+            tuplet: cl.tuplet && keep(cl.tuplet) ? remap(cl.tuplet) : null
+          });
         }
+        fi += cl.notes.length;
+        cp += cl.beats;
+      });
+      const count = parts.length;
+      let labels = null;
+      if (S.counts) {
+        labels = parts.map(function (pt) {
+          const s = syllable(pt.p - Math.floor(pt.p / bpb) * bpb, model.ternary);
+          return !pt.head || model.tieAfter.has(pt.fi - 1) ? '(' + s + ')' : s;
+        });
       }
       let pitches = null;
       if (melody) {
-        pitches = [];
-        for (let j = 0; j < count; j++) pitches.push(model.voices[0].pitch[fi + j]);
+        pitches = parts.map(function (pt) {
+          const pc = model.voices[0].pitch[pt.fi];
+          return pt.head || !pc ? pc : { key: pc.key, glyph: null };   // the held-over part needs no accidental again
+        });
       }
-      const built = buildCells(bar.cells, labels, pitches);
-      const pibs = [];
-      for (let j = 0; j < count; j++) pibs.push(model.flat[fi + j].pib);
-      const beatW = drawVoice(ctx, stave, built, bpb, pibs, { origin: x + (c === 0 ? tsExtra : 0), beatW: bw / bpb, ternary: model.ternary });
+      const built = buildCells(cells, labels, pitches);
+      const pibs = parts.map(function (pt) { return pt.p; });
+      const beatW = drawVoice(ctx, stave, built, it.len, pibs, { origin: x + (lineStart ? tsExtra : 0) - it.from * unitW, beatW: unitW, ternary: model.ternary });
       const anchors = makeAnchors(built.notes, pibs, bpb, beatW);
       const lineY = stave.getYForLine(2);
-      const geo = { anchors: anchors, beatW: beatW, x2: x + w, lineY: lineY, landY: lineY - 52 - topShift, row: r, rowTop: r * rowH, rowH: rowH,
+      const geo = { bar: bi, from: it.from, len: it.len, barStart: bi * bpb, start: bi * bpb + it.from, anchors: anchors, beatW: beatW, x2: x + w, lineY: lineY, landY: lineY - 52 - topShift, row: r, rowTop: r * rowH, rowH: rowH,
         y1: lineY - 44 - topShift, y2: lineY + gridShift + (S.counts ? 30 : 0) + (G.grid && G.pulse ? 62 : (G.grid ? 44 : (G.pulse ? 46 : 14))) };
       view.barGeo.push(geo);
       if (G.grid || G.pulse) {
-        const info = [];
-        for (let j = 0; j < count; j++) info.push({ p: pibs[j], attack: !model.tieAfter.has(fi + j - 1), rest: !!model.flat[fi + j].rest });
-        geo.grid = drawGrid(svg, stave, anchors, info, bpb, gridShift, model.ternary);
+        const info = parts.map(function (pt) {
+          return { p: pt.p, attack: pt.head && !model.tieAfter.has(pt.fi - 1), rest: !!model.flat[pt.fi].rest };
+        });
+        geo.grid = drawGrid(svg, stave, anchors, info, bpb, gridShift, model.ternary, lo, hi);
       }
-      highlightTargets(svg, built, claimedStems).forEach(function (t) { view.els.push(t); });
-      built.notes.forEach(function (sn) { flatSN.push(sn); rowOf.push(r); });
-      fi += count;
+      // everything that lights up for a note, both parts of a note held across a line break
+      highlightTargets(svg, built, claimedStems).forEach(function (t, k) {
+        const i = parts[k].fi;
+        view.els[i] = view.els[i] ? view.els[i].concat(t) : t;
+      });
+      built.notes.forEach(function (sn, k) {
+        const i = parts[k].fi;
+        if (!firstSN[i]) { firstSN[i] = sn; firstRow[i] = r; }
+        else {
+          // a note cut by the line break: tie its two parts
+          tieNotes(ctx, lastSN[i], sn, lastRow[i] === r);
+        }
+        lastSN[i] = sn; lastRow[i] = r;
+      });
     });
 
     model.tieAfter.forEach(function (i) {
-      const a = flatSN[i], b = flatSN[i + 1];
+      const a = lastSN[i], b = firstSN[i + 1];
       if (!a || !b) return;
-      if (rowOf[i] === rowOf[i + 1]) {
-        new VF.StaveTie({ first_note: a, last_note: b, first_indices: [0], last_indices: [0] }).setContext(ctx).draw();
-      } else {
-        new VF.StaveTie({ first_note: a, last_note: null, first_indices: [0], last_indices: [0] }).setContext(ctx).draw();
-        new VF.StaveTie({ first_note: null, last_note: b, first_indices: [0], last_indices: [0] }).setContext(ctx).draw();
-      }
+      tieNotes(ctx, a, b, lastRow[i] === firstRow[i + 1]);
     });
 
     // both balls share one lane; the bigger blue metronome ball is drawn first so the gold
     // note ball shows on top of it when they land together
     // Build: a hit area over each placed cell; tap it to remove that cell
     if (opts.build) {
-      view.barGeo.forEach(function (g, bi) {
+      view.barGeo.forEach(function (g) {
+        const bi = g.bar;
         let p = 0;
         model.bars[bi].cells.forEach(function (cell, ci) {
-          if (cell.id !== 'rest') {
-            const x0 = g.anchors[0].x - g.beatW * slotLead(model.ternary) + p * g.beatW;
+          const c0 = Math.max(p, g.from), c1 = Math.min(p + cell.beats, g.from + g.len);   // the part on this line
+          if (cell.id !== 'rest' && c1 > c0 + 1e-6) {
+            const x0 = g.anchors[0].x - g.beatW * slotLead(model.ternary) + c0 * g.beatW;
             const t = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
             t.setAttribute('class', 'cell-hit');
             t.setAttribute('x', (x0 + 1).toFixed(1));
             t.setAttribute('y', g.rowTop + 4);
-            t.setAttribute('width', (cell.beats * g.beatW - 2).toFixed(1));
+            t.setAttribute('width', ((c1 - c0) * g.beatW - 2).toFixed(1));
             t.setAttribute('height', g.rowH - 8);
             t.setAttribute('rx', 6);
             t.setAttribute('tabindex', '0');
@@ -928,8 +1061,9 @@
     // Dictation: one tile per beat hides the answer; tap a tile to reveal just that beat
     if (opts.dictation) {
       view.dictation = true;
-      view.barGeo.forEach(function (g, bi) {
-        for (let k = 0; k < bpb; k++) {
+      view.barGeo.forEach(function (g) {
+        const bi = g.bar;
+        for (let k = Math.round(g.from); k < g.from + g.len - 1e-6; k++) {
           const x0 = g.anchors[0].x - g.beatW * slotLead(model.ternary) + k * g.beatW;
           const t = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
           t.setAttribute('class', 'beat-tile');
@@ -1017,16 +1151,24 @@
   }
   let wrapSeq = 0;
 
+  // Index of the line segment (a bar, or half of a split bar) that holds beat position pos
+  function segAt(view, pos) {
+    const g = view.barGeo;
+    let i = 0;
+    while (i < g.length - 1 && g[i + 1].start <= pos + 1e-9) i++;
+    return i;
+  }
+
   // Offset from where the playhead is drawn to where its wrap-around copy belongs, or null
   // when it is not near a line break.
   function wrapOffset(view, pos) {
     if (pos === null) return null;
     const bpb = view.model.bpb;
     const geo = view.barGeo;
-    const b = Math.min(geo.length - 1, Math.floor(pos / bpb + 1e-9));
-    if (b < 0) return null;
-    const pib = pos - b * bpb;
-    const here = xAtIn(geo[b].anchors, pib);
+    if (pos < -1e-9) return null;
+    const b = segAt(view, pos);
+    const total = view.model.total;
+    const here = xAtIn(geo[b].anchors, pos - geo[b].barStart);
     const margin = 24;   // ball halo
     let other = null;
     // the bar that follows / precedes this one; with Loop on, the last bar leads back to the first
@@ -1035,14 +1177,14 @@
     const prev = b > 0 ? b - 1 : (looping && P.looped ? geo.length - 1 : -1);
     if (next >= 0 && (geo[next].row !== geo[b].row || next === 0)) {
       // leaving a line: the copy comes in from the left of the next line (or the first, when looping)
-      const x = xAtIn(geo[next].anchors, pib - bpb);
+      const x = xAtIn(geo[next].anchors, pos - geo[next].barStart - (next === 0 ? total : 0));
       if (x > -margin) other = { x: x, g: geo[next] };
     }
     if (!other && prev >= 0 && (geo[prev].row !== geo[b].row || b === 0)) {
       // just entered a line: the copy finishes going off the end of the line before. That line
       // may stop short of the right edge (a last line with fewer bars), so the copy only shows
       // up to its closing barline, never out in the empty space after it.
-      const x = xAtIn(geo[prev].anchors, pib + bpb);
+      const x = xAtIn(geo[prev].anchors, pos - geo[prev].barStart + (b === 0 ? total : 0));
       if (x < geo[prev].x2 + 4) other = { x: x, g: geo[prev] };
     }
     if (!other) return null;
@@ -1119,8 +1261,8 @@
   function ballXY(view, pos, atEndOf) {
     const bpb = view.model.bpb;
     const geo = view.barGeo;
-    let b = atEndOf !== undefined ? atEndOf : Math.min(geo.length - 1, Math.floor(pos / bpb + 1e-9));
-    const pib = atEndOf !== undefined ? bpb : pos - b * bpb;
+    let b = atEndOf !== undefined ? atEndOf : segAt(view, pos);
+    const pib = atEndOf !== undefined ? geo[b].from + geo[b].len : pos - geo[b].barStart;
     return { x: atEndOf !== undefined ? xAtIn(geo[b].anchors, pib) : motionX(view, b, pib), land: geo[b].landY, row: geo[b].row, bar: b };
   }
 
@@ -1219,8 +1361,8 @@
     const bpb = view.model.bpb, W = view.coverW;
     const at = function (p) {   // row and x of a beat position
       p = Math.max(0, Math.min(p, view.model.total));
-      const b = Math.min(view.barGeo.length - 1, Math.floor(p / bpb + 1e-9));
-      return { row: view.barGeo[b].row, x: motionX(view, b, Math.min(p - b * bpb, bpb)) };
+      const b = segAt(view, p), g = view.barGeo[b];
+      return { row: g.row, x: motionX(view, b, Math.min(p - g.barStart, g.from + g.len)) };
     };
     const set = function (el, x0, x1) { el.setAttribute('x', x0.toFixed(1)); el.setAttribute('width', Math.max(0, x1 - x0).toFixed(1)); };
     if (pos === null || pos < 0) {   // count-in: everything veiled
@@ -1319,7 +1461,7 @@
       g.grid.forEach(function (sl) {
         let k = 0;
         if (S.highlight && pos !== null) {
-          const dist = pos - (bi * bpb + sl.p);
+          const dist = pos - (g.barStart + sl.p);
           k = dist < 0 ? Math.max(0, 1 + dist / SLOT_AHEAD) : Math.max(0, 1 - dist / SLOT_AFTER);
           k = k * k * (3 - 2 * k);
         }
@@ -1334,7 +1476,7 @@
       if (run.fill) {
         let w = 0, op = 0;
         if (S.highlight && pos !== null) {
-          const px = xAtIn(view.barGeo[run.bi].anchors, pos - run.bi * bpb);
+          const px = xAtIn(view.barGeo[run.bi].anchors, pos - view.barGeo[run.bi].barStart);
           w = Math.max(0, Math.min(run.fx2 - run.fx1, px - run.fx1));
           op = px < run.fx1 ? 0 : (px <= run.fx2 ? 1 : k);
         }
@@ -1345,7 +1487,7 @@
       // no fill: the underline stays fully lit while the playhead is on it (rather than dipping
       // between syllables, which made it flash), then fades out with the other highlights
       if (S.highlight && pos !== null) {
-        const px = xAtIn(view.barGeo[run.bi].anchors, pos - run.bi * bpb);
+        const px = xAtIn(view.barGeo[run.bi].anchors, pos - view.barGeo[run.bi].barStart);
         if (px >= run.fx1 && px <= run.fx2) k = 1;
         else if (px > run.fx2) {
           // after the end: a quick smooth fade from full (an eighth of a beat), so it is off
@@ -1361,6 +1503,13 @@
     });
   }
 
+  // Scrolling score: keep the playhead a third of the way across, so what comes next is in view
+  function followPlayhead(view, x) {
+    const host = view.host;
+    const target = Math.max(0, x * view.zoom - host.clientWidth / 3);
+    if (Math.abs(host.scrollLeft - target) > 0.5) host.scrollLeft = target;
+  }
+
   // hidePh: keep the playhead hidden (exam mode)
   function movePlayhead(view, pos, hidePh) {
     if (!view) return;
@@ -1372,9 +1521,11 @@
     updateWrap(view, pos, hidePh);
     const bpb = view.model.bpb;
     const barGeo = view.barGeo;
-    const b = pos === null ? -1 : Math.floor(pos / bpb + 1e-9);
+    const b = pos === null || pos < -1e-9 || pos > view.model.total - 1e-8 ? -1 : segAt(view, pos);
     // the 1 e & a grid, pulse circles, circles and underlines fade with the playhead too
     updateGridGlow(view, pos);
+    // a scrolling score follows playback even when the playhead line itself is off
+    if (view.scroll && b >= 0) followPlayhead(view, motionX(view, b, pos - barGeo[b].barStart));
     const edgeEl = view.playheadEdge;
     if (!S.playhead || hidePh || b < 0 || b >= barGeo.length) {
       ph.style.display = 'none';
@@ -1384,7 +1535,7 @@
     const phGlow = pos === null ? 1 : glowAt(view, pos, S.playheadFollow === 'notes' && !view.dictation ? 'notes' : 'metro');
     ph.style.opacity = (0.05 + 0.9 * phGlow).toFixed(2);   // nearly fades out between pulses
     const g = barGeo[b];
-    const x = motionX(view, b, pos - b * bpb).toFixed(1);
+    const x = motionX(view, b, pos - g.barStart).toFixed(1);
     ph.setAttribute('x1', x);
     ph.setAttribute('x2', x);
     ph.setAttribute('y1', g.y1);
@@ -2051,7 +2202,7 @@
     document.body.classList.toggle('no-circles', !S.circles);
     document.body.classList.toggle('beat-colors', !!S.beatColors);
     document.body.classList.toggle('no-aids', !S.aids);
-    ['ties', 'metro', 'countIn', 'aids', 'grid', 'pulse', 'boxes', 'circles', 'highlight', 'beatLines', 'beatMarks', 'beatColors', 'runFill', 'loop', 'punch'].forEach(function (k) {
+    ['ties', 'metro', 'countIn', 'aids', 'grid', 'pulse', 'boxes', 'circles', 'highlight', 'beatLines', 'beatMarks', 'beatColors', 'runFill', 'wideScroll', 'loop', 'punch'].forEach(function (k) {
       const el = $('#opt-' + k);
       el.checked = !!S[k];
       el.addEventListener('change', function () {
@@ -2059,7 +2210,7 @@
         save();
         if (k === 'ties') regenerate();
         else if (k === 'aids') { document.body.classList.toggle('no-aids', !S.aids); refreshViews(); }
-        else if (k === 'counts' || k === 'beatLines' || k === 'beatMarks' || k === 'runFill' || k === 'grid' || k === 'pulse' || k === 'tracer' || k === 'metroBall') refreshViews();
+        else if (k === 'counts' || k === 'beatLines' || k === 'beatMarks' || k === 'runFill' || k === 'wideScroll' || k === 'grid' || k === 'pulse' || k === 'tracer' || k === 'metroBall') refreshViews();
         else if (k === 'boxes') document.body.classList.toggle('no-boxes', !S.boxes);
         else if (k === 'metro' && actx) actx.metroGate.gain.setTargetAtTime(S.metro ? 1 : 0, actx.currentTime, 0.01);   // takes effect mid-play
         else if (k === 'beatColors') document.body.classList.toggle('beat-colors', !!S.beatColors);
@@ -2236,7 +2387,7 @@
     $('#opt-legato').disabled = !S.melody;
     $('#sub-' + S.sub).checked = true;
     $('#bars-' + S.bars).checked = true;
-    ['ties', 'metro', 'countIn', 'aids', 'grid', 'pulse', 'boxes', 'circles', 'highlight', 'beatLines', 'beatMarks', 'beatColors', 'runFill', 'loop', 'punch'].forEach(function (k) {
+    ['ties', 'metro', 'countIn', 'aids', 'grid', 'pulse', 'boxes', 'circles', 'highlight', 'beatLines', 'beatMarks', 'beatColors', 'runFill', 'wideScroll', 'loop', 'punch'].forEach(function (k) {
       $('#opt-' + k).checked = !!S[k];
     });
     document.body.classList.toggle('no-aids', !S.aids);
@@ -2627,10 +2778,11 @@
     pt.x = e.clientX; pt.y = e.clientY;
     const q = pt.matrixTransform(svg.getScreenCTM().inverse());
     let hit = null;
-    bview.barGeo.forEach(function (g, b) {
-      const x0 = g.anchors[0].x - g.beatW * slotLead(!!S.ternary);
-      if (q.y >= g.rowTop && q.y < g.rowTop + g.rowH && q.x >= x0 - 8 && q.x <= x0 + S.meter * g.beatW + 8) {
-        hit = { b: b, pib: Math.max(0, Math.min(S.meter, (q.x - x0) / g.beatW)) };
+    bview.barGeo.forEach(function (g) {
+      const x0 = g.anchors[0].x - g.beatW * slotLead(!!S.ternary);   // where beat 0 of the bar would be
+      const lo = g.from, hi = g.from + g.len;
+      if (q.y >= g.rowTop && q.y < g.rowTop + g.rowH && q.x >= x0 + lo * g.beatW - 8 && q.x <= x0 + hi * g.beatW + 8) {
+        hit = { b: g.bar, pib: Math.max(lo, Math.min(hi, (q.x - x0) / g.beatW)) };
       }
     });
     if (hit) addCell(id, hit.b, hit.pib); else flash('Drop the rhythm onto one of the bars.');
@@ -3094,6 +3246,7 @@
   // change: add an entry at the top with the next version number. A returning visitor sees every entry newer than the last version they saw
   // (stored in localStorage); a first-time visitor gets the tour instead.
   const CHANGES = [
+    { v: 6, date: 'November 11, 2026', features: ['Scroll long bars (Settings, Display): keeps 12/8 and 15/8 bars full size on a phone and scrolls the score sideways instead. Off by default.'], fixes: ['Syllables no longer crowd on phones. When a whole bar doesn’t fit (like 12/8 or 15/8), each line holds the same number of beats, bars carry on to the next line with a barline only where they end, and a note held across a line break is shown as two tied notes.'] },
     { v: 5, date: 'November 10, 2026', features: [], fixes: [
       'Turning the metronome off while a rhythm is playing now silences it straight away.'
     ] },
