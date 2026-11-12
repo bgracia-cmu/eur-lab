@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=DM+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
 <div class="wrap">
@@ -29,6 +29,7 @@
     <a href="#practice" id="tab-practice" role="tab" aria-selected="true">Practice</a>
     <a href="#dictation" id="tab-dictation" role="tab" aria-selected="false">Dictation</a>
     <a href="#compose" id="tab-build" role="tab" aria-selected="false">Compose</a>
+    <a href="#assemble" id="tab-assemble" role="tab" aria-selected="false">Assemble</a>
     <a href="#glossary" id="tab-glossary" role="tab" aria-selected="false">Glossary</a>
     <a href="#settings" id="tab-options" role="tab" aria-selected="false">Settings</a>
   </nav>
@@ -49,6 +50,12 @@
       <button class="btn primary" id="bPlayBtn" type="button"></button>
       <button class="btn" id="bUndo" type="button">Undo</button>
       <button class="btn" id="bClear" type="button">Clear</button>
+    </div>
+    <div class="stage-bar" data-page="assemble" hidden>
+      <button class="btn primary" id="cPlayBtn" type="button"></button>
+      <button class="btn" id="cUndo" type="button">Undo</button>
+      <button class="btn" id="cClear" type="button">Clear</button>
+      <button class="btn" id="cSendBtn" type="button" title="Practice this rhythm on the Practice page">Send to Practice</button>
     </div>
     <div class="tempo">
       <label for="bpm">Tempo</label>
@@ -174,6 +181,30 @@
     </div>
   </section>
 
+  <section id="view-assemble" role="tabpanel" aria-labelledby="tab-assemble" hidden>
+    <div class="practice" id="cLayout">
+    <div class="stage">
+      <p class="meta" id="cMeta"></p>
+      <div class="dict-tools">
+        <div class="subseg" role="radiogroup" aria-label="What a tap places">
+          <label><input type="radio" name="ctool" value="N" checked><span>Note</span></label>
+          <label><input type="radio" name="ctool" value="R"><span>Rest</span></label>
+        </div>
+        <label class="pill" title="Write the rhythm only with the lists picked in the rhythm settings (otherwise every list for this meter is used)"><input type="checkbox" id="cOnlySel"><span>Selected lists only</span></label>
+        <div class="subseg" id="cGridSel" role="radiogroup" aria-label="Grid subdivision"></div>
+      </div>
+      <p class="hint">Tap a box to place a note one box long, or drag across boxes for a longer note. Tap the start of a note to remove it. Use Rest the same way to place rests.</p>
+      <div class="cgrid" id="cgrid" aria-label="Rhythm grid"></div>
+      <h2 class="c-head">With the lists</h2>
+      <p class="note" id="cNote" hidden></p>
+      <div class="score-card" id="cCard">
+        <div id="cscore" class="score vf" aria-label="The rhythm written with list cells"></div>
+      </div>
+      <div class="c-used" id="cUsed" aria-label="Cells used"></div>
+    </div>
+    </div>
+  </section>
+
   <section id="view-glossary" role="tabpanel" aria-labelledby="tab-glossary" hidden>
     <p class="gl-intro">Every cell from the lists. Press play to hear one. The cards use the tempo and the options bar above, the same as Practice.</p>
     <div id="glossaryLists" class="glossary-lists"></div>
@@ -251,6 +282,6 @@
 <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"
   integrity="sha384-NOpv0+9OuhqtqeXLSoULPF4d3UCwlWkmcHkJklpAosC7LpqYvhFCFqqu9QElzbjS"
   crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="app.js"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

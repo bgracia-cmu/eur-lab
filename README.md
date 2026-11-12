@@ -29,6 +29,10 @@ notation library (VexFlow, from jsDelivr) and the web fonts.
   metronome muted, playhead hidden).
 - **Compose** — drag cells from the palette onto the staff (or tap to add),
   remove, undo, play.
+- **Assemble** — place notes and rests on a grid of the beat's subdivision (8ths, 16ths
+  or triplets in x/4; 8ths or 16ths in x/8) and see it in standard notation, rewritten beat by beat
+  with the list rhythms and the fewest ties. Every list for the meter is used unless
+  Selected lists only is on. Send to Practice makes it the Practice score.
 - **Glossary** — every cell in the lists, playable.
 
 ## Rhythm lists

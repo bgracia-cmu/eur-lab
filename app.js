@@ -2402,7 +2402,7 @@
   // A settings change (or New rhythm) makes fresh rhythms for both Practice and Dictation
   function regenerate() {
     save();
-    if (practicePlaying || dictPlaying || buildPlaying) stopAll();
+    if (practicePlaying || dictPlaying || buildPlaying || convPlaying) stopAll();
     cancelExam(); exam = null;
     generate();
     dscore = makeRhythm();
@@ -2414,7 +2414,7 @@
     $('#score').hidden = hide;
     $('#hiddenMsg').hidden = !hide;
     if (!hide) renderScore();
-    const names = LISTS.filter(function (L) { return meterLists().indexOf(L.id) >= 0; }).map(function (L) { return L.name; }).join(', ');
+    const names = score.fromAssemble ? 'from Assemble' : LISTS.filter(function (L) { return meterLists().indexOf(L.id) >= 0; }).map(function (L) { return L.name; }).join(', ');
     $('#scoreMeta').textContent = score.bars.length + (score.bars.length === 1 ? ' bar' : ' bars') + ' · ' + meterLabel(score.bpb, score.ternary) + ' · ' + names;
     const note = $('#fillNote');
     if (score.filled) {
@@ -2817,6 +2817,415 @@
     renderBuild();
   });
 
+  // ---------- Assemble page ----------
+  // The student places notes and rests on a grid of the beat's subdivision (sixteenths by
+  // default); each note lasts until the next note or rest. The rhythm is then rewritten with
+  // cells from the selected lists, beat by beat, using as few ties as possible.
+  // Positions are kept in units of 1/12 beat, so a sixteenth (3), a triplet eighth (4) and a
+  // compound sixteenth (2) are all whole numbers.
+  const U = 12;
+  // Grid subdivisions per beat: simple time (x/4) and compound time (x/8)
+  const CONV_GRIDS = {
+    simple: [{ div: 2, name: '8ths' }, { div: 4, name: '16ths' }, { div: 3, name: 'Triplets' }],
+    compound: [{ div: 3, name: '8ths' }, { div: 6, name: '16ths' }]
+  };
+  let conv = null, cmodel = null, cview = null, convPlaying = false, convTool = 'N', convDrag = null;
+  const convHistory = [];
+  function loadConv() {
+    try { conv = JSON.parse(localStorage.getItem('eur-assemble') || 'null'); } catch (e) { conv = null; }
+    if (!conv || typeof conv.marks !== 'object' || !conv.marks) conv = { meter: compMeter(), grid: null, marks: {} };
+  }
+  function saveConv() { try { localStorage.setItem('eur-assemble', JSON.stringify(conv)); } catch (e) { /* ignore */ } }
+  function pushConvHistory() { convHistory.push(JSON.stringify(conv)); if (convHistory.length > 100) convHistory.shift(); }
+  const convTotal = function () { return S.bars * S.meter * U; };
+  const convDiv = function () {
+    const opts = S.ternary ? CONV_GRIDS.compound : CONV_GRIDS.simple;
+    const ok = opts.some(function (g) { return g.div === conv.grid; });
+    return ok ? conv.grid : (S.ternary ? 6 : 4);   // sixteenths unless another grid is chosen
+  };
+  function fitConv() {
+    // keep the grid in step with the meter and number of bars
+    if (String(conv.meter) !== compMeter()) conv = { meter: compMeter(), grid: null, marks: {}, onlySel: conv.onlySel };
+    conv.grid = convDiv();
+    const total = convTotal();
+    Object.keys(conv.marks).forEach(function (k) { if (+k >= total) delete conv.marks[k]; });
+    snapMarks();   // every mark sits on a slot of the grid
+  }
+  // Move every mark onto the nearest slot of the current grid (after the grid changes)
+  function snapMarks() {
+    const step = U / conv.grid;
+    const total = convTotal();
+    const out = {};
+    Object.keys(conv.marks).map(Number).sort(function (a, b) { return a - b; }).forEach(function (u) {
+      const s = Math.min(total - step, Math.round(u / step) * step);
+      if (out[s] === undefined) out[s] = conv.marks[u];   // two marks on one slot: the first stays
+    });
+    conv.marks = out;
+  }
+
+  // Notes and rests as events { s, e, rest } in units. Nothing marked at the start is a rest.
+  function convEvents() {
+    const total = convTotal();
+    const starts = Object.keys(conv.marks).map(Number).filter(function (u) { return u < total; }).sort(function (a, b) { return a - b; });
+    if (!starts.length || starts[0] > 0) starts.unshift(0);
+    return starts.map(function (s, i) {
+      return { s: s, e: i + 1 < starts.length ? starts[i + 1] : total, rest: conv.marks[s] !== 'N' };
+    });
+  }
+
+  // Rewrite the events with list cells. Each bar is filled beat by beat: a cell fits a stretch
+  // of beats when every note or rest that starts inside it starts on one of the cell's notes.
+  // The cheapest way to fill the bar wins. Costs:
+  //   1    each tie (a note carried into a new cell, or split inside a cell)
+  //   1    a rest split inside a cell
+  //   0.5  a rest that runs across a beat without starting and ending on beats
+  //   1.5  a two-beat cell across the middle of a 4-beat bar (the middle should show)
+  //   100  a cell from a list that isn't selected (only used when nothing else fits)
+  //   0.01 each note, so fewer, longer notes win a tie
+  function assembleRhythm() {
+    const bpb = S.meter, ternary = !!S.ternary;
+    const events = convEvents();
+    const total = convTotal();
+    const evAt = new Array(total);
+    const isStart = new Array(total).fill(false);
+    events.forEach(function (ev, i) {
+      isStart[ev.s] = true;
+      for (let u = ev.s; u < ev.e; u++) evAt[u] = i;
+    });
+    // every list for this meter, unless the student limits it to the lists picked in the settings
+    const lists = conv.onlySel ? meterLists() : LISTS.filter(function (L) { return !!L.ternary === ternary; }).map(function (L) { return L.id; });
+    const cand = CELLS.filter(function (c) { return c.ternary === ternary && c.beats <= bpb + 1e-6; }).map(function (c) {
+      const offs = [];
+      let p = 0;
+      c.notes.forEach(function (nt) { offs.push(p); p += Math.round(nt.d * U); });
+      return { cell: c, offs: offs, lens: c.notes.map(function (nt) { return Math.round(nt.d * U); }), beats: Math.round(c.beats), listed: lists.indexOf(c.list) >= 0 };
+    });
+
+    // cost of cell k at unit position at, or null when the rhythm doesn't fit it
+    function fit(k, at, beat) {
+      const end = at + k.beats * U;
+      const own = new Set(k.offs.map(function (o) { return at + o; }));
+      for (let u = at + 1; u < end; u++) if (isStart[u] && !own.has(u)) return null;
+      let cost = 0;
+      const notes = [];
+      k.offs.forEach(function (o, j) {
+        const s = at + o, e = s + k.lens[j];
+        const ev = events[evAt[s]];
+        const head = ev.s === s;
+        if (!head && !ev.rest) cost += 1;
+        else if (!head && j > 0) cost += 1;
+        if (ev.rest && Math.floor((s - 1e-9) / U) < Math.floor((e - 1e-9) / U) && (s % U || e % U)) cost += 0.5;
+        notes.push({ rest: ev.rest, tied: !head && !ev.rest });
+        cost += 0.01;
+      });
+      if (bpb === 4 && k.beats === 2 && beat === 1) cost += 1.5;
+      if (!k.listed) cost += 100;
+      return { cost: cost, notes: notes };
+    }
+
+    const bars = [];
+    const used = [];   // per bar: the chosen cells
+    let ties = 0, offList = 0;
+    for (let b = 0; b < S.bars; b++) {
+      const best = [{ cost: 0 }];
+      for (let i = 1; i <= bpb; i++) best[i] = { cost: Infinity };
+      for (let i = 0; i < bpb; i++) {
+        if (best[i].cost === Infinity) continue;
+        cand.forEach(function (k) {
+          if (i + k.beats > bpb) return;
+          const f = fit(k, (b * bpb + i) * U, i);
+          if (!f) return;
+          const c = best[i].cost + f.cost;
+          if (c < best[i + k.beats].cost - 1e-9) best[i + k.beats] = { cost: c, from: i, k: k, notes: f.notes };
+        });
+      }
+      const chosen = [];
+      for (let i = bpb; i > 0; i = best[i].from) chosen.unshift(best[i]);
+      const cells = chosen.map(function (ch) {
+        const c = ch.k.cell;
+        const notes = c.notes.map(function (nt, j) { return { d: nt.d, vf: nt.vf, dots: nt.dots, rest: ch.notes[j].rest }; });
+        // beams stop at rests
+        const beams = [];
+        c.beams.forEach(function (g) {
+          let run = [];
+          g.concat([-1]).forEach(function (j) {
+            if (j >= 0 && !notes[j].rest) run.push(j);
+            else { if (run.length > 1) beams.push(run); run = []; }
+          });
+        });
+        if (!ch.k.listed) offList++;
+        return { id: c.id, list: c.list, name: c.name, notes: notes, beams: beams, tuplet: c.tuplet, beats: c.beats, ternary: c.ternary, listed: ch.k.listed, ties: ch.notes };
+      });
+      bars.push({ cells: cells });
+      used.push(cells);
+    }
+    const model = buildModel(bars, bpb, ternary);
+    // a note carried over from the one before is tied to it
+    let fi = 0;
+    bars.forEach(function (bar) {
+      bar.cells.forEach(function (c) {
+        c.ties.forEach(function (t) {
+          if (t.tied && fi > 0) { model.tieAfter.add(fi - 1); ties++; }
+          fi++;
+        });
+      });
+    });
+    model.used = used;
+    model.ties = ties;
+    model.offList = offList;
+    model.empty = !events.some(function (ev) { return !ev.rest; });
+    return model;
+  }
+
+  // The input grid: one row of slots per bar, grouped by beat, with the count syllables under it
+  function buildConvGrid() {
+    const root = $('#cgrid');
+    const bpb = S.meter, div = conv.grid, step = U / div;
+    const ternary = !!S.ternary;
+    root.innerHTML = '';
+    root.style.setProperty('--cg-beats', bpb);
+    for (let b = 0; b < S.bars; b++) {
+      const bar = document.createElement('div');
+      bar.className = 'cg-bar';
+      bar.innerHTML = '<span class="cg-num">' + (b + 1) + '</span>';
+      const beats = document.createElement('div');
+      beats.className = 'cg-beats';
+      for (let i = 0; i < bpb; i++) {
+        const beat = document.createElement('div');
+        beat.className = 'cg-beat';
+        for (let j = 0; j < div; j++) {
+          const u = (b * bpb + i) * U + j * step;
+          const sl = document.createElement('button');
+          sl.type = 'button';
+          sl.className = 'cg-slot' + (j === 0 ? ' on-beat' : '') + (!ternary && div === 4 && j === 2 ? ' half' : '') + (ternary && div === 6 && j % 2 === 0 && j ? ' half' : '');
+          sl.dataset.u = u;
+          const syl = syllable(i + j / div, ternary);
+          sl.innerHTML = '<span class="cg-cell"></span><span class="cg-syl">' + syl + '</span>';
+          sl.setAttribute('aria-label', 'Bar ' + (b + 1) + ', ' + syl + (j ? ' of beat ' + (i + 1) : ''));
+          beat.appendChild(sl);
+        }
+        beats.appendChild(beat);
+      }
+      bar.appendChild(beats);
+      root.appendChild(bar);
+    }
+    paintConvGrid(conv.marks);
+  }
+  // Colour the slots: note start, note held, rest start, rest held
+  function paintConvGrid(marks) {
+    const total = convTotal();
+    let cur = 'R';
+    let prevSlot = null;
+    document.querySelectorAll('#cgrid .cg-slot').forEach(function (sl) {
+      const u = +sl.dataset.u;
+      const m = marks[u];
+      const starts = m !== undefined || u === 0;
+      if (starts) cur = m === 'N' ? 'N' : 'R';
+      if (starts && prevSlot) prevSlot.classList.add('ends');
+      sl.classList.remove('n', 'nh', 'r', 'rh', 'ends');
+      sl.classList.add(cur === 'N' ? (starts ? 'n' : 'nh') : (starts ? 'r' : 'rh'));
+      prevSlot = sl;
+      sl.setAttribute('aria-pressed', String(m !== undefined));
+      if (u + U / conv.grid >= total) sl.classList.add('ends');
+    });
+  }
+  // What a press (from) and drag (to) would do. The note or rest covers exactly the slots
+  // pressed or dragged over; whatever was there before carries on after it (a note that was
+  // cut starts again there). Pressing the start of a note with the Note tool removes that
+  // note (it becomes a rest); pressing the start of a rest with the Rest tool removes the
+  // rest mark, so the note before it runs on.
+  function convApply(marks, from, to, tool) {
+    const step = U / conv.grid;
+    const total = convTotal();
+    const out = Object.assign({}, marks);
+    // the note or rest sounding at u before this change ('N' or 'R')
+    const before = function (u) {
+      let k = 'R';
+      Object.keys(marks).map(Number).sort(function (x, y) { return x - y; }).forEach(function (m) { if (m <= u) k = marks[m]; });
+      return k;
+    };
+    if (from === to && marks[from] === tool) {
+      if (tool === 'N') out[from] = 'R'; else delete out[from];
+      return tidyMarks(out);
+    }
+    const a = Math.min(from, to), z = Math.max(from, to);
+    const after = z + step;
+    const carry = after < total ? before(after) : null;
+    out[a] = tool;
+    for (let u = a + step; u <= z; u += step) delete out[u];
+    if (carry && out[after] === undefined) out[after] = carry;
+    return tidyMarks(out);
+  }
+  // Drop rest marks that only continue a rest (they would split it into two rests)
+  function tidyMarks(marks) {
+    let prev = 'R';
+    Object.keys(marks).map(Number).sort(function (x, y) { return x - y; }).forEach(function (u) {
+      if (marks[u] === 'R' && prev === 'R') delete marks[u];
+      else prev = marks[u];
+    });
+    return marks;
+  }
+  const slotFrom = function (e) {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const sl = el && el.closest ? el.closest('#cgrid .cg-slot') : null;
+    return sl ? +sl.dataset.u : null;
+  };
+  $('#cgrid').addEventListener('pointerdown', function (e) {
+    const sl = e.target.closest('.cg-slot');
+    if (!sl || e.button > 0) return;
+    e.preventDefault();
+    convDrag = { from: +sl.dataset.u, to: +sl.dataset.u, id: e.pointerId };
+    try { $('#cgrid').setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    paintConvGrid(convApply(conv.marks, convDrag.from, convDrag.to, convTool));
+  });
+  $('#cgrid').addEventListener('pointermove', function (e) {
+    if (!convDrag || e.pointerId !== convDrag.id) return;
+    const u = slotFrom(e);
+    if (u === null || u === convDrag.to) return;
+    convDrag.to = u;
+    paintConvGrid(convApply(conv.marks, convDrag.from, convDrag.to, convTool));
+  });
+  function endConvDrag(e, cancel) {
+    if (!convDrag || e.pointerId !== convDrag.id) return;
+    const d = convDrag;
+    convDrag = null;
+    if (cancel) { paintConvGrid(conv.marks); return; }
+    if (convPlaying) stopAll();
+    pushConvHistory();
+    conv.marks = convApply(conv.marks, d.from, d.to, convTool);
+    saveConv();
+    renderAssemble();
+  }
+  $('#cgrid').addEventListener('pointerup', function (e) { endConvDrag(e, false); });
+  $('#cgrid').addEventListener('pointercancel', function (e) { endConvDrag(e, true); });
+  // keyboard: Enter or Space on a slot toggles the current tool's mark there
+  $('#cgrid').addEventListener('keydown', function (e) {
+    const sl = e.target.closest('.cg-slot');
+    if (!sl || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    pushConvHistory();
+    conv.marks = convApply(conv.marks, +sl.dataset.u, +sl.dataset.u, convTool);
+    saveConv();
+    renderAssemble();
+    const again = document.querySelector('#cgrid .cg-slot[data-u="' + sl.dataset.u + '"]');
+    if (again) again.focus();
+  });
+  // a click comes after pointerup; the press already did the work
+  $('#cgrid').addEventListener('click', function (e) { e.preventDefault(); });
+
+  function syncConvTools() {
+    document.querySelectorAll('input[name="ctool"]').forEach(function (r) { r.checked = r.value === convTool; });
+    $('#cOnlySel').checked = !!conv.onlySel;
+    document.body.classList.toggle('asm-only-sel', !!conv.onlySel);   // Lists only matters then
+    const opts = S.ternary ? CONV_GRIDS.compound : CONV_GRIDS.simple;
+    const box = $('#cGridSel');
+    const key = opts.map(function (g) { return g.div; }).join(',');
+    if (box.dataset.key !== key) {
+      box.dataset.key = key;
+      box.innerHTML = '<span class="subcap" aria-hidden="true">Grid</span>' + opts.map(function (g) {
+        return '<label><input type="radio" name="cgrid" value="' + g.div + '"><span>' + g.name + '</span></label>';
+      }).join('');
+      box.querySelectorAll('input').forEach(function (r) {
+        r.addEventListener('change', function () {
+          if (convPlaying) stopAll();
+          pushConvHistory();
+          conv.grid = +r.value;
+          snapMarks();
+          saveConv();
+          renderAssemble();
+        });
+      });
+    }
+    box.querySelectorAll('input').forEach(function (r) { r.checked = +r.value === conv.grid; });
+    $('#cUndo').disabled = !convHistory.length;
+    $('#cPlayBtn').innerHTML = convPlaying ? ICON_STOP + 'Stop' : ICON_PLAY + 'Play';
+  }
+
+  function renderAssemble() {
+    if (!conv) loadConv();
+    fitConv();
+    syncConvTools();
+    buildConvGrid();
+    cmodel = assembleRhythm();
+    cview = renderRhythm($('#cscore'), cmodel, { timeSig: true, barlines: true, minWidth: 300 });
+    const lab = meterLabel(S.meter, !!S.ternary);
+    $('#cMeta').textContent = cmodel.empty ? lab : lab + ' · ' + cmodel.ties + (cmodel.ties === 1 ? ' tie' : ' ties');
+    // the cells used, bar by bar
+    const out = $('#cUsed');
+    out.innerHTML = '';
+    if (cmodel.empty) {
+      out.innerHTML = '<p class="hint">Place some notes on the grid to see them written with the lists.</p>';
+    } else {
+      cmodel.used.forEach(function (cells, b) {
+        const row = document.createElement('div');
+        row.className = 'cu-bar';
+        row.innerHTML = '<span class="cu-num">Bar ' + (b + 1) + '</span>' + cells.map(function (c) {
+          const what = c.notes.every(function (nt) { return nt.rest; }) ? 'Rest (' + c.name.toLowerCase() + ')' : c.name;
+          return '<span class="cu-cell' + (c.listed ? '' : ' off') + '"><span class="tag" data-list="' + c.list + '">' + c.list + '</span>' + what + '</span>';
+        }).join('');
+        out.appendChild(row);
+      });
+    }
+    const note = $('#cNote');
+    note.hidden = !cmodel.offList;
+    if (cmodel.offList) {
+      const need = [];
+      cmodel.used.forEach(function (cells) { cells.forEach(function (c) { if (!c.listed && need.indexOf(c.list) < 0) need.push(c.list); }); });
+      note.textContent = 'Some beats need ' + need.map(function (id) { return LISTS.find(function (L) { return L.id === id; }).name; }).join(' and ') + ', which ' + (need.length > 1 ? 'aren\'t' : 'isn\'t') + ' selected. Those cells are marked; turn the list on in the rhythm settings, turn off Selected lists only, or change the rhythm.';
+    }
+  }
+
+  function startAssemble() {
+    if (!cmodel || cmodel.empty) return;
+    const ok = play({
+      seq: makeSeq(cmodel, function () { return cview; }),
+      totalBeats: cmodel.total, accentEvery: cmodel.bpb, ternary: cmodel.ternary,
+      countIn: S.countIn ? cmodel.bpb : 0, loop: S.loop,
+      onPos: function (p) { movePlayhead(cview, p); },
+      onCount: function (n) { showCount($('#cCard'), n); },
+      onStop: function () { convPlaying = false; syncConvTools(); }
+    });
+    if (!ok) return;
+    convPlaying = true;
+    syncConvTools();
+  }
+  function toggleAssemble() { if (convPlaying) stopAll(); else startAssemble(); }
+  $('#cPlayBtn').addEventListener('click', toggleAssemble);
+  $('#cUndo').addEventListener('click', function () {
+    if (!convHistory.length) return;
+    if (convPlaying) stopAll();
+    conv = JSON.parse(convHistory.pop());
+    saveConv();
+    renderAssemble();
+  });
+  $('#cClear').addEventListener('click', function () {
+    if (convPlaying) stopAll();
+    pushConvHistory();
+    conv.marks = {};
+    saveConv();
+    renderAssemble();
+  });
+  // Send to Practice: the rhythm becomes the Practice score, so it can be played with the
+  // Practice display modes, melody and conductor. New rhythm on Practice replaces it as usual.
+  $('#cSendBtn').addEventListener('click', function () {
+    if (!cmodel || cmodel.empty) { $('#cNote').textContent = 'Place some notes on the grid first.'; $('#cNote').hidden = false; return; }
+    if (convPlaying) stopAll();
+    score = assembleRhythm();
+    score.fromAssemble = true;
+    applyMelody(score);
+    revealed = false;
+    location.hash = '#practice';
+  });
+  $('#cOnlySel').addEventListener('change', function () {
+    if (convPlaying) stopAll();
+    conv.onlySel = $('#cOnlySel').checked;
+    saveConv();
+    renderAssemble();
+  });
+  document.querySelectorAll('input[name="ctool"]').forEach(function (r) {
+    r.addEventListener('change', function () { convTool = r.value; });
+  });
+
   // ---------- Glossary ----------
   // Each card is a one-bar model drawn and played with the same code and settings as Practice.
   const glossaryCards = [];
@@ -2876,6 +3285,7 @@
     if (location.hash === '#glossary') renderGlossary();
     else if (location.hash === '#dictation') renderDictation();
     else if (location.hash === '#compose') renderBuild();
+    else if (location.hash === '#assemble') renderAssemble();
     else showScore();
   }
 
@@ -2883,9 +3293,11 @@
   function route() {
     if (location.hash === '#build') history.replaceState(null, '', '#compose');   // old link to the page now called Compose
     if (location.hash === '#options') history.replaceState(null, '', '#settings'); // old link to the page now called Settings
-    const views = { '#glossary': 'glossary', '#dictation': 'dictation', '#compose': 'build', '#settings': 'options' };
+    if (location.hash === '#convert') history.replaceState(null, '', '#assemble'); // first name of the Assemble page
+    const views = { '#glossary': 'glossary', '#dictation': 'dictation', '#compose': 'build', '#assemble': 'assemble', '#settings': 'options' };
     const view = views[location.hash] || 'practice';
-    ['practice', 'dictation', 'build', 'glossary', 'options'].forEach(function (v) {
+    document.body.dataset.page = view;   // pages hide the rhythm settings they don't use (styles.css)
+    ['practice', 'dictation', 'build', 'assemble', 'glossary', 'options'].forEach(function (v) {
       $('#view-' + v).hidden = v !== view;
       $('#tab-' + v).setAttribute('aria-selected', String(v === view));
     });
@@ -2900,7 +3312,7 @@
     document.querySelectorAll('.general .stage-bar').forEach(function (b) { b.hidden = b.dataset.page !== view; });
     cancelExam(); exam = null;
     // one rhythm-settings panel, shown on whichever of Practice / Dictation is open
-    const layout = view === 'dictation' ? $('#dLayout') : (view === 'build' ? $('#bLayout') : $('#pLayout'));
+    const layout = view === 'dictation' ? $('#dLayout') : (view === 'build' ? $('#bLayout') : (view === 'assemble' ? $('#cLayout') : $('#pLayout')));
     const panel = document.querySelector('aside.panel');
     if (panel && panel.parentNode !== layout) layout.insertBefore(panel, layout.firstChild);
     stopAll();
@@ -2914,6 +3326,7 @@
     if (location.hash === '#glossary' || location.hash === '#settings') return;
     const dict = location.hash === '#dictation';
     if (location.hash === '#compose') { if (e.code === 'Space') { e.preventDefault(); toggleBuild(); } return; }
+    if (location.hash === '#assemble') { if (e.code === 'Space') { e.preventDefault(); toggleAssemble(); } return; }
     if (e.code === 'Space') { e.preventDefault(); if (dict) toggleDictation(); else togglePractice(); }
     else if (e.key === 'n' || e.key === 'N') { if (dict) $('#dNewBtn').click(); else regenerate(); }
     else if (e.key === 'l' || e.key === 'L') { $('#opt-loop').click(); }
@@ -2932,6 +3345,7 @@
       if (location.hash === '#glossary') renderGlossary();
       else if (location.hash === '#dictation') renderDictation();
       else if (location.hash === '#compose') renderBuild();
+      else if (location.hash === '#assemble') renderAssemble();
       else if (!$('#score').hidden) renderScore();
     }, 150);
   });
@@ -3010,6 +3424,8 @@
       chip.innerHTML = '<span class="rs-name"></span><span class="fs-sum"></span><svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>';
       chip.querySelector('.rs-name').textContent = names[i];
       chip.querySelector('.fs-sum').dataset.sum = kinds[i];
+      chip.dataset.kind = kinds[i];   // lets a page hide settings it doesn't use (styles.css)
+      fs.dataset.kind = kinds[i];
       chip.addEventListener('click', function () {
         const open = !fs.classList.contains('open');
         sets.forEach(function (f, j) { f.classList.toggle('open', open && j === i); });
@@ -3077,7 +3493,7 @@
   // Each step can set the page up first: which tab is open (page), whether the Settings panel
   // is open (opts), and whether melody mode is shown (melody). Everything is put back afterwards.
   const TOUR = [
-    { page: 'practice', sel: '.tabs', title: 'Welcome to Eurhythmics Lab', text: 'Practice plays random rhythms, Dictation hides one for you to write down, Compose lets you drag rhythms onto a staff, and Glossary lists every rhythm with a play button.' },
+    { page: 'practice', sel: '.tabs', title: 'Welcome to Eurhythmics Lab', text: 'Practice plays random rhythms, Dictation hides one for you to write down, Compose lets you drag rhythms onto a staff, Assemble rewrites a rhythm you place on a grid with the list rhythms, and Glossary lists every rhythm with a play button.' },
     { page: 'practice', sel: '.general', title: 'Play, tempo and metronome', text: 'Play the rhythm (Space) or make a new one (N). Next to them: the tempo, the metronome and its clicks per beat, count-in and Loop.' },
     { page: 'practice', sel: '#pLayout aside.panel', title: 'Rhythm settings', text: 'Choose the binary lists, meter, number of bars, melody mode and ties.' },
     { page: 'practice', sel: '#tab-options', title: 'Settings', text: 'Sound, what is shown under the staff, display modes and playback visuals live on their own page, and apply everywhere. Replay this tour any time with the Tour button.' }
@@ -3243,9 +3659,11 @@
 
   // ---------- What's new ----------
   // One entry per release, newest first, with its new features and its bug fixes. To ship a
-  // change: add an entry at the top with the next version number. A returning visitor sees every entry newer than the last version they saw
+  // change: add an entry at the top with the next version number, and set the same number in the
+  // ?v= of app.js and styles.css in index.html so browsers fetch the new files instead of cached ones. A returning visitor sees every entry newer than the last version they saw
   // (stored in localStorage); a first-time visitor gets the tour instead.
   const CHANGES = [
+    { v: 10, date: 'November 12, 2026', features: ['Assemble page: place notes and rests on a grid of the beat (8ths, 16ths or triplets; 8ths or 16ths in compound time) and see the rhythm in standard notation, written with the list rhythms and tied across beats where needed.', 'Send to Practice (Assemble page): practice your rhythm on the Practice page, with its display modes, melody and conductor.'], fixes: [] },
     { v: 6, date: 'November 11, 2026', features: ['Scroll long bars (Settings, Display): keeps 12/8 and 15/8 bars full size on a phone and scrolls the score sideways instead. Off by default.'], fixes: ['Syllables no longer crowd on phones. When a whole bar doesn’t fit (like 12/8 or 15/8), each line holds the same number of beats, bars carry on to the next line with a barline only where they end, and a note held across a line break is shown as two tied notes.'] },
     { v: 5, date: 'November 10, 2026', features: [], fixes: [
       'Turning the metronome off while a rhythm is playing now silences it straight away.'

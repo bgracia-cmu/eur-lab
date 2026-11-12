@@ -428,3 +428,41 @@ line.cond-path { stroke-linecap: round; }
 .site-foot { margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; color: var(--muted); font-size: .88rem; }
 .site-foot a { color: var(--accent); font-weight: 600; text-decoration: none; }
 .site-foot a:hover, .site-foot a:focus-visible { text-decoration: underline; }
+
+/* Convert: input grid (one row per bar, slots grouped by beat) and the cells used */
+.cgrid { display: flex; flex-direction: column; gap: 10px; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.cg-bar { display: flex; align-items: stretch; gap: 8px; }
+.cg-num { flex: none; width: 1.6em; padding-top: 10px; text-align: right; color: var(--muted); font: 600 12px var(--font-mono); }
+.cg-beats { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(var(--cg-beats), minmax(0, 1fr)); border: 1.5px solid var(--ink); border-radius: 8px; overflow: hidden; background: var(--card); }
+.cg-beat { display: flex; min-width: 0; }
+.cg-beat + .cg-beat { border-left: 1.5px solid var(--ink); }
+.cg-slot { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 5px 0 3px; border: 0; border-left: 1px dashed var(--line); background: none; color: inherit; font: inherit; cursor: pointer; }
+.cg-slot.on-beat { border-left: 0; }
+.cg-slot.half { border-left: 1px solid var(--muted); }
+.cg-slot:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cg-cell { display: block; height: 26px; margin: 0; }
+.cg-syl { font: 500 11.5px var(--font-mono); color: var(--muted); text-align: center; line-height: 1.2; }
+.cg-slot.on-beat .cg-syl { color: var(--ink); font-weight: 600; }
+.cg-slot:hover .cg-cell { background: var(--accent-soft); }
+.cg-slot.n .cg-cell, .cg-slot.nh .cg-cell { background: var(--gold); }
+.cg-slot.n .cg-cell { margin-left: 3px; border-radius: 6px 0 0 6px; box-shadow: inset 4px 0 0 var(--ink); }
+.cg-slot.ends.n .cg-cell, .cg-slot.ends.nh .cg-cell { margin-right: 3px; border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+.cg-slot.ends.n .cg-cell { border-radius: 6px; }
+.cg-slot.r .cg-cell { margin-left: 3px; border-left: 2px solid var(--muted); }
+.cg-slot.r .cg-cell, .cg-slot.rh .cg-cell { background: repeating-linear-gradient(135deg, transparent 0 4px, var(--line) 4px 6px); opacity: .7; }
+.cg-slot.rh:hover .cg-cell, .cg-slot.r:hover .cg-cell { background: var(--accent-soft); opacity: 1; }
+.c-head { margin: 6px 0 0; font: 700 18px/1.2 var(--font-display); }
+.c-used { display: flex; flex-direction: column; gap: 6px; }
+.cu-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13.5px; }
+.cu-num { color: var(--muted); font: 600 12px var(--font-mono); min-width: 4.5em; }
+.cu-cell { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+.cu-cell .tag { padding: 0 6px; font-size: 11px; }
+.cu-cell.off { border-color: var(--brown); border-style: dashed; }
+@media (max-width: 640px) {
+  .cg-syl { font-size: 10px; }
+  .cg-cell { height: 22px; }
+}
+/* Assemble: Melody and Ties don't apply there, and Lists only matters with Selected lists only on */
+body[data-page="assemble"] [data-kind="melody"],
+body[data-page="assemble"] [data-kind="options"],
+body[data-page="assemble"]:not(.asm-only-sel) [data-kind="lists"] { display: none !important; }
